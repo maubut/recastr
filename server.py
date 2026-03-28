@@ -407,6 +407,12 @@ def handle_render(data):
     webcam = data.get("webcam")
     webcam_file = data.get("webcam_file")
 
+    # Normalize background padding from percentage (0-15) to fraction (0-0.15)
+    if background and "padding" in background:
+        p = background["padding"]
+        if p > 1:  # came as percentage, convert to fraction
+            background["padding"] = p / 100.0
+
     if not video_path or not os.path.exists(video_path):
         return 400, {"error": f"Video introuvable: {video_path}"}
 
@@ -774,6 +780,10 @@ def handle_file_info(data):
         return 500, {"error": str(e)}
 
 
+UPLOAD_DIR = os.path.join(SCRIPT_DIR, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
 # ============================================================
 # HTTP SERVER
 # ============================================================
@@ -835,6 +845,11 @@ class RecastrHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
 
+        # --- File upload (multipart) ---
+        if path == "/api/upload":
+            self._handle_upload()
+            return
+
         handler = ROUTES.get(("POST", path))
         if not handler:
             self._send_json(404, {"error": f"Route non trouvee: {path}"})
@@ -851,6 +866,74 @@ class RecastrHandler(http.server.SimpleHTTPRequestHandler):
 
         code, result = handler(data)
         self._send_json(code, result)
+
+    def _handle_upload(self):
+        """Handle multipart file upload → save to uploads/ and return path."""
+        content_type = self.headers.get("Content-Type", "")
+        content_length = int(self.headers.get("Content-Length", 0))
+
+        if "multipart/form-data" not in content_type:
+            self._send_json(400, {"error": "Expected multipart/form-data"})
+            return
+
+        # Extract boundary
+        import re
+        match = re.search(r'boundary=(.+)', content_type)
+        if not match:
+            self._send_json(400, {"error": "No boundary found"})
+            return
+        boundary = match.group(1).strip().encode()
+
+        # Read full body
+        body = self.rfile.read(content_length)
+
+        # Parse multipart manually (no cgi module needed)
+        delimiter = b"--" + boundary
+        parts = body.split(delimiter)
+
+        filename = None
+        file_data = None
+        for part in parts:
+            if b"Content-Disposition" not in part:
+                continue
+            # Split headers from body at double newline
+            if b"\r\n\r\n" in part:
+                header_section, payload = part.split(b"\r\n\r\n", 1)
+            elif b"\n\n" in part:
+                header_section, payload = part.split(b"\n\n", 1)
+            else:
+                continue
+
+            header_str = header_section.decode("utf-8", errors="replace")
+            if 'name="file"' not in header_str:
+                continue
+
+            # Extract filename
+            fn_match = re.search(r'filename="([^"]+)"', header_str)
+            if not fn_match:
+                continue
+            filename = os.path.basename(fn_match.group(1))
+
+            # Strip trailing boundary markers / CRLF
+            if payload.endswith(b"\r\n"):
+                payload = payload[:-2]
+            elif payload.endswith(b"\n"):
+                payload = payload[:-1]
+            file_data = payload
+            break
+
+        if not filename or file_data is None:
+            self._send_json(400, {"error": "No file in upload"})
+            return
+
+        dest = os.path.join(UPLOAD_DIR, filename)
+        with open(dest, 'wb') as f:
+            f.write(file_data)
+
+        abs_path = os.path.abspath(dest)
+        state.add_dir(abs_path)
+        print(f"[UPLOAD] Saved: {abs_path} ({len(file_data)} bytes)")
+        self._send_json(200, {"success": True, "path": abs_path, "filename": filename})
 
     def do_OPTIONS(self):
         """Handle CORS preflight."""

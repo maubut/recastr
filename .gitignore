@@ -21,7 +21,11 @@ cursor_logger_debug.log
 
 # Rendered videos
 *_autozoom.mp4
+*_zoomed.mp4
 *_debug.mp4
+
+# Uploaded files
+uploads/
 
 # OS
 .DS_Store

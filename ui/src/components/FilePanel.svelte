@@ -19,9 +19,24 @@
     if (e.dataTransfer?.files?.length > 0) handleFile(e.dataTransfer.files[0], type);
   }
 
+  async function uploadToServer(file) {
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.success) return data.path;
+      showToast(`Upload: ${data.error}`);
+    } catch (e) {
+      showToast(`Upload: ${e.message}`);
+    }
+    return null;
+  }
+
   async function handleFile(file, type) {
     if (type === 'video') {
       videoName = file.name;
+      // Load preview locally via blob URL
       const url = URL.createObjectURL(file);
       const vid = getVideoEl();
       if (!vid) return;
@@ -32,6 +47,9 @@
         $videoH = vid.videoHeight;
         $videoDuration = vid.duration;
       }, { once: true });
+      // Upload to server so render can access it
+      const serverPath = await uploadToServer(file);
+      if (serverPath) $videoPath = serverPath;
     } else if (type === 'webcam') {
       webcamName = file.name;
       const url = URL.createObjectURL(file);
@@ -39,6 +57,9 @@
       if (!cam) return;
       cam.src = url;
       cam.load();
+      // Upload to server
+      const serverPath = await uploadToServer(file);
+      if (serverPath) $webcamPath = serverPath;
     } else if (type === 'log') {
       logName = file.name;
       try {
@@ -48,6 +69,9 @@
         const meta = data.metadata || {};
         $webcamInfo = meta.webcam || null;
         if ($cursorEvents.length > 0) analyzeLocal();
+        // Upload to server
+        const serverPath = await uploadToServer(file);
+        if (serverPath) $logPath = serverPath;
       } catch (err) {
         showToast(`Erreur: ${err.message}`);
       }
