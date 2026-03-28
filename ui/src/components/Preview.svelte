@@ -35,8 +35,43 @@
   });
 
   $: if (previewCanvas && $videoW > 0) {
-    previewCanvas.width = $videoW;
-    previewCanvas.height = $videoH;
+    // Canvas is larger when background/padding is enabled
+    const pad = $options.bg ? $options.padding / 100 : 0;
+    const scale = 1 / (1 - 2 * pad);
+    previewCanvas.width = Math.round($videoW * scale);
+    previewCanvas.height = Math.round($videoH * scale);
+  }
+
+  function drawBackground(cw, ch) {
+    const style = $options.bgStyle;
+    if (style === 'carbon') {
+      ctx.fillStyle = '#111113';
+      ctx.fillRect(0, 0, cw, ch);
+      // Subtle dot pattern
+      ctx.fillStyle = 'rgba(255,255,255,0.03)';
+      for (let y = 0; y < ch; y += 12) {
+        for (let x = 0; x < cw; x += 12) {
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    } else if (style === 'gradient') {
+      const grad = ctx.createLinearGradient(0, 0, cw, ch);
+      grad.addColorStop(0, $options.bgColor1);
+      grad.addColorStop(1, $options.bgColor2);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (style === 'mesh') {
+      ctx.fillStyle = '#0f0f12';
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.lineWidth = 1;
+      const step = 40;
+      for (let x = 0; x < cw; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke(); }
+      for (let y = 0; y < ch; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
+    } else if (style === 'solid') {
+      ctx.fillStyle = $options.bgColor1;
+      ctx.fillRect(0, 0, cw, ch);
+    }
   }
 
   function draw() {
@@ -46,20 +81,61 @@
     const t = videoEl.currentTime;
     const state = getZoomState(t);
     const vw = $videoW, vh = $videoH;
+    const cw = previewCanvas.width, ch = previewCanvas.height;
 
-    if (state.zoom > 1.02) {
-      const cw = vw / state.zoom;
-      const ch = vh / state.zoom;
-      const cx = state.cx * vw;
-      const cy = state.cy * vh;
-      const x1 = Math.max(0, Math.min(cx - cw / 2, vw - cw));
-      const y1 = Math.max(0, Math.min(cy - ch / 2, vh - ch));
-      ctx.drawImage(videoEl, x1, y1, cw, ch, 0, 0, vw, vh);
-    } else {
-      ctx.drawImage(videoEl, 0, 0, vw, vh);
+    const hasBg = $options.bg;
+    const pad = hasBg ? $options.padding / 100 : 0;
+    const radius = hasBg ? $options.borderRadius : 0;
+
+    // Video inset area
+    const vx = Math.round(pad * cw);
+    const vy = Math.round(pad * ch);
+    const vWidth = cw - 2 * vx;
+    const vHeight = ch - 2 * vy;
+
+    if (hasBg) {
+      // Draw background
+      drawBackground(cw, ch);
+
+      // Inset shadow behind the video
+      if ($options.insetShadow && pad > 0) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 30;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 8;
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.beginPath();
+        ctx.roundRect(vx, vy, vWidth, vHeight, radius);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Clip to rounded rect for video
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(vx, vy, vWidth, vHeight, radius);
+      ctx.clip();
     }
 
-    // Webcam overlay
+    // Draw video (zoomed or not) into the inset area
+    if (state.zoom > 1.02) {
+      const srcW = vw / state.zoom;
+      const srcH = vh / state.zoom;
+      const cx = state.cx * vw;
+      const cy = state.cy * vh;
+      const x1 = Math.max(0, Math.min(cx - srcW / 2, vw - srcW));
+      const y1 = Math.max(0, Math.min(cy - srcH / 2, vh - srcH));
+      ctx.drawImage(videoEl, x1, y1, srcW, srcH, vx, vy, vWidth, vHeight);
+    } else {
+      ctx.drawImage(videoEl, 0, 0, vw, vh, vx, vy, vWidth, vHeight);
+    }
+
+    if (hasBg) {
+      ctx.restore();
+    }
+
+    // Webcam overlay (drawn relative to inset area)
     if ($options.webcam && webcamEl?.src && webcamEl.videoWidth > 0) {
       drawWebcam(webcamEl, 0, 0, webcamEl.videoWidth, webcamEl.videoHeight);
     } else if ($options.webcam && $webcamInfo?.nx !== undefined) {
@@ -72,15 +148,16 @@
       while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ($cursorEvents[mid].t <= t) lo = mid; else hi = mid - 1; }
       const cp = $cursorEvents[lo];
       if (cp?.click && cp.in === true && Math.abs(cp.t - t) < 0.6) {
-        let cpx = cp.nx * vw, cpy = cp.ny * vh;
+        // Map normalized video coords to canvas coords (accounting for padding)
+        let cpx = vx + cp.nx * vWidth, cpy = vy + cp.ny * vHeight;
         if (state.zoom > 1.05) {
-          const cw = vw / state.zoom, ch = vh / state.zoom;
-          const sx = Math.max(0, Math.min(state.cx * vw - cw/2, vw - cw));
-          const sy = Math.max(0, Math.min(state.cy * vh - ch/2, vh - ch));
-          cpx = (cp.nx * vw - sx) / cw * vw;
-          cpy = (cp.ny * vh - sy) / ch * vh;
+          const zw = vw / state.zoom, zh = vh / state.zoom;
+          const sx = Math.max(0, Math.min(state.cx * vw - zw/2, vw - zw));
+          const sy = Math.max(0, Math.min(state.cy * vh - zh/2, vh - zh));
+          cpx = vx + (cp.nx * vw - sx) / zw * vWidth;
+          cpy = vy + (cp.ny * vh - sy) / zh * vHeight;
         }
-        if (cpx >= 0 && cpx <= vw && cpy >= 0 && cpy <= vh) {
+        if (cpx >= vx && cpx <= vx + vWidth && cpy >= vy && cpy <= vy + vHeight) {
           const age = Math.abs(t - cp.t);
           const prog = age / 0.6;
           const alpha = Math.max(0, 0.7 * (1 - prog));
@@ -105,7 +182,7 @@
         let started = false;
         for (const ev of $cursorEvents) {
           if (ev.t < t - 2 || ev.t > t) continue;
-          const px = (ev.nx || 0) * vw, py = (ev.ny || 0) * vh;
+          const px = vx + (ev.nx || 0) * vWidth, py = vy + (ev.ny || 0) * vHeight;
           const alpha = Math.max(0.05, 1 - (t - ev.t) / 2);
           ctx.strokeStyle = `rgba(139,92,246,${alpha * 0.6})`;
           if (!started) { ctx.beginPath(); ctx.moveTo(px, py); started = true; }
@@ -115,7 +192,7 @@
         let nearest = null, bestDt = Infinity;
         for (const ev of $cursorEvents) { const d = Math.abs(ev.t - t); if (d < bestDt) { bestDt = d; nearest = ev; } }
         if (nearest && bestDt < 0.2) {
-          const px = (nearest.nx || 0) * vw, py = (nearest.ny || 0) * vh;
+          const px = vx + (nearest.nx || 0) * vWidth, py = vy + (nearest.ny || 0) * vHeight;
           ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(px - 15, py); ctx.lineTo(px + 15, py); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(px, py - 15); ctx.lineTo(px, py + 15); ctx.stroke();
@@ -127,7 +204,7 @@
         for (const ev of $cursorEvents) {
           if (!ev.click) continue;
           const isIn = ev.in === true;
-          const px = (ev.nx || 0) * vw, py = (ev.ny || 0) * vh;
+          const px = vx + (ev.nx || 0) * vWidth, py = vy + (ev.ny || 0) * vHeight;
           ctx.beginPath(); ctx.arc(px, py, 8, 0, Math.PI * 2);
           ctx.fillStyle = isIn ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)'; ctx.fill();
           ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.stroke();
@@ -143,16 +220,17 @@
     const shape = $options.webcamShape;
     const pos = $options.webcamPos;
     const sizePct = $options.webcamSize / 100;
-    const vw = $videoW, vh = $videoH;
+    // Position webcam relative to the full canvas (including padding)
+    const cw = previewCanvas.width, ch = previewCanvas.height;
     const camAspect = srcW / Math.max(srcH, 1);
-    const dstW = vw * sizePct;
+    const dstW = cw * sizePct;
     const dstH = dstW / camAspect;
-    const margin = vw * 0.02;
+    const margin = cw * 0.02;
     let dstX, dstY;
     if (pos === 'top-left') { dstX = margin; dstY = margin; }
-    else if (pos === 'top-right') { dstX = vw - dstW - margin; dstY = margin; }
-    else if (pos === 'bottom-right') { dstX = vw - dstW - margin; dstY = vh - dstH - margin; }
-    else { dstX = margin; dstY = vh - dstH - margin; }
+    else if (pos === 'top-right') { dstX = cw - dstW - margin; dstY = margin; }
+    else if (pos === 'bottom-right') { dstX = cw - dstW - margin; dstY = ch - dstH - margin; }
+    else { dstX = margin; dstY = ch - dstH - margin; }
 
     ctx.save();
     if (shape === 'circle') {
@@ -195,6 +273,13 @@
     zoomOverlayEl.style.width = oW + 'px';
     zoomOverlayEl.style.height = oH + 'px';
 
+    // Compute video inset area in display coordinates
+    const padFrac = $options.bg ? $options.padding / 100 : 0;
+    const vidLeft = padFrac * oW;
+    const vidTop = padFrac * oH;
+    const vidW = oW - 2 * vidLeft;
+    const vidH = oH - 2 * vidTop;
+
     const t = videoEl?.currentTime || 0;
     for (let i = 0; i < $zoomEvents.length; i++) {
       const z = $zoomEvents[i];
@@ -207,14 +292,14 @@
       const nx = z.nx || 0.5, ny = z.ny || 0.5;
       const zl = z.zoom || 2.0;
 
-      // Dot
+      // Dot — map normalized video coords to display coords
       const dot = document.createElement('div');
       Object.assign(dot.style, {
         position: 'absolute', width: '10px', height: '10px', borderRadius: '50%',
         background: '#8b5cf6', border: '2px solid rgba(255,255,255,0.8)',
         transform: 'translate(-50%,-50%)', cursor: 'grab', pointerEvents: 'auto', zIndex: '3',
         boxShadow: '0 0 8px rgba(139,92,246,0.4)',
-        left: (nx * oW) + 'px', top: (ny * oH) + 'px',
+        left: (vidLeft + nx * vidW) + 'px', top: (vidTop + ny * vidH) + 'px',
       });
       dot.addEventListener('mousedown', (e) => startOverlayDrag(e, i, 'dot'));
       zoomOverlayEl.appendChild(dot);
@@ -228,8 +313,8 @@
         position: 'absolute', border: isSelected ? '2px solid rgba(139,92,246,0.6)' : '1px solid rgba(139,92,246,0.3)',
         background: isSelected ? 'rgba(139,92,246,0.08)' : 'rgba(139,92,246,0.04)',
         pointerEvents: 'auto', cursor: 'move', zIndex: '2', borderRadius: '4px',
-        left: (rx*oW)+'px', top: (ry*oH)+'px',
-        width: (rw*oW)+'px', height: (rh*oH)+'px',
+        left: (vidLeft + rx*vidW)+'px', top: (vidTop + ry*vidH)+'px',
+        width: (rw*vidW)+'px', height: (rh*vidH)+'px',
       });
       rect.addEventListener('mousedown', (e) => startOverlayDrag(e, i, 'rect'));
       zoomOverlayEl.appendChild(rect);
@@ -241,7 +326,7 @@
         background: '#fff', border: '1.5px solid #8b5cf6', borderRadius: '2px',
         cursor: 'nwse-resize', pointerEvents: 'auto', zIndex: '4',
         transform: 'translate(-50%,-50%)',
-        left: ((rx+rw)*oW)+'px', top: ((ry+rh)*oH)+'px',
+        left: (vidLeft + (rx+rw)*vidW)+'px', top: (vidTop + (ry+rh)*vidH)+'px',
       });
       handle.addEventListener('mousedown', (e) => startOverlayDrag(e, i, 'handle'));
       zoomOverlayEl.appendChild(handle);
@@ -252,15 +337,21 @@
     e.preventDefault(); e.stopPropagation();
     const z = $zoomEvents[idx];
     const canvasRect = previewCanvas.getBoundingClientRect();
+    // Compute video inset in display space
+    const padFrac = $options.bg ? $options.padding / 100 : 0;
+    const vidLeft = canvasRect.left + padFrac * canvasRect.width;
+    const vidTop = canvasRect.top + padFrac * canvasRect.height;
+    const vidW = canvasRect.width * (1 - 2 * padFrac);
+    const vidH = canvasRect.height * (1 - 2 * padFrac);
     overlayDragState = {
       type, idx,
       startNx: z.nx || 0.5, startNy: z.ny || 0.5, startZoom: z.zoom || 2.0,
       startClientX: e.clientX, startClientY: e.clientY,
-      ox: canvasRect.left, oy: canvasRect.top, w: canvasRect.width, h: canvasRect.height,
+      ox: vidLeft, oy: vidTop, w: vidW, h: vidH,
     };
     if (type === 'rect') {
-      const mx = (e.clientX - canvasRect.left) / canvasRect.width;
-      const my = (e.clientY - canvasRect.top) / canvasRect.height;
+      const mx = (e.clientX - vidLeft) / vidW;
+      const my = (e.clientY - vidTop) / vidH;
       overlayDragState.offsetNx = (z.nx || 0.5) - mx;
       overlayDragState.offsetNy = (z.ny || 0.5) - my;
     }
@@ -303,8 +394,12 @@
     on:dblclick={(e) => {
       if ($selectedZoomIdx < 0 || !$zoomEvents[$selectedZoomIdx]) return;
       const rect = previewCanvas.getBoundingClientRect();
-      const nx = Math.max(0.02, Math.min(0.98, (e.clientX - rect.left) / rect.width));
-      const ny = Math.max(0.02, Math.min(0.98, (e.clientY - rect.top) / rect.height));
+      // Map click to normalized video coords (accounting for padding)
+      const padFrac = $options.bg ? $options.padding / 100 : 0;
+      const rawNx = (e.clientX - rect.left) / rect.width;
+      const rawNy = (e.clientY - rect.top) / rect.height;
+      const nx = Math.max(0.02, Math.min(0.98, (rawNx - padFrac) / (1 - 2 * padFrac)));
+      const ny = Math.max(0.02, Math.min(0.98, (rawNy - padFrac) / (1 - 2 * padFrac)));
       $zoomEvents[$selectedZoomIdx].nx = nx;
       $zoomEvents[$selectedZoomIdx].ny = ny;
       $zoomEvents = $zoomEvents;

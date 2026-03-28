@@ -311,7 +311,14 @@ export async function startRender() {
     fps: get(videoFps) || 30,
   };
 
-  if (opts.bg) config.background = { style: opts.bgStyle };
+  if (opts.bg) config.background = {
+    style: opts.bgStyle,
+    color1: opts.bgColor1,
+    color2: opts.bgColor2,
+    padding: opts.padding,
+    border_radius: opts.borderRadius,
+    inset_shadow: opts.insetShadow,
+  };
   if (opts.captions && get(captionSegments).length > 0) {
     config.captions = { style: opts.captionStyle, segments: get(captionSegments) };
   }

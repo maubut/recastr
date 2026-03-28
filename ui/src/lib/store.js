@@ -25,15 +25,24 @@ export const obsStatus = writable({ connected: false, recording: false, label: '
 
 // --- Options ---
 export const options = writable({
+  // Canvas layout
   bg: false,
   bgStyle: 'carbon',
+  bgColor1: '#1a1a2e',
+  bgColor2: '#6c5ce7',
+  padding: 5,
+  borderRadius: 12,
+  insetShadow: true,
+  // Webcam
   webcam: false,
   webcamShape: 'circle',
   webcamPos: 'bottom-right',
   webcamSize: 20,
+  // Captions
   captions: false,
   captionStyle: 'tiktok',
   captionModel: 'base',
+  // Cursor
   clickHighlight: true,
   debugClicks: false,
   debugTrail: false,

@@ -41,22 +41,52 @@
   </button>
   {#if !collapsed}
     <div class="p-2.5 pt-1.5">
-      <!-- Background -->
-      <div class="flex items-center gap-2 py-1.5">
-        <input type="checkbox" bind:checked={$options.bg} />
+      <!-- Canvas / Background -->
+      <div class="text-[10px] text-txt3 uppercase tracking-wider font-medium mb-1">Canvas</div>
+      <div class="flex items-center gap-2 py-1">
+        <input type="checkbox" checked={$options.bg} on:change={(e) => { $options = { ...$options, bg: e.target.checked }; }} />
         <label class="text-[11px] text-txt2 cursor-pointer">Background</label>
-        <select bind:value={$options.bgStyle} class="ml-auto bg-bg border border-border text-txt2 rounded-md px-1.5 py-0.5 text-[10px] outline-none focus:border-accent/40">
-          <option value="carbon">Carbon</option>
-          <option value="gradient">Gradient</option>
-          <option value="mesh">Mesh</option>
-        </select>
       </div>
+      {#if $options.bg}
+        <div class="flex items-center gap-2 py-1">
+          <label class="text-[11px] text-txt3 min-w-[40px]">Style</label>
+          <select bind:value={$options.bgStyle} class="flex-1 bg-bg border border-border text-txt2 rounded-md px-1.5 py-0.5 text-[10px] outline-none focus:border-accent/40">
+            <option value="carbon">Carbon</option>
+            <option value="gradient">Gradient</option>
+            <option value="mesh">Mesh</option>
+            <option value="solid">Solide</option>
+          </select>
+        </div>
+        {#if $options.bgStyle === 'gradient' || $options.bgStyle === 'solid'}
+          <div class="flex items-center gap-2 py-1">
+            <label class="text-[11px] text-txt3 min-w-[40px]">Couleur</label>
+            <input type="color" bind:value={$options.bgColor1} class="w-6 h-6 rounded border border-border cursor-pointer" />
+            {#if $options.bgStyle === 'gradient'}
+              <input type="color" bind:value={$options.bgColor2} class="w-6 h-6 rounded border border-border cursor-pointer" />
+            {/if}
+          </div>
+        {/if}
+        <div class="flex items-center gap-2 py-1">
+          <label class="text-[11px] text-txt3 min-w-[40px]">Padding</label>
+          <input type="range" min="0" max="15" step="1" bind:value={$options.padding} class="flex-1" />
+          <span class="text-[10px] text-txt3 min-w-[28px] text-right font-mono">{$options.padding}%</span>
+        </div>
+        <div class="flex items-center gap-2 py-1">
+          <label class="text-[11px] text-txt3 min-w-[40px]">Rayon</label>
+          <input type="range" min="0" max="32" step="2" bind:value={$options.borderRadius} class="flex-1" />
+          <span class="text-[10px] text-txt3 min-w-[28px] text-right font-mono">{$options.borderRadius}px</span>
+        </div>
+        <div class="flex items-center gap-2 py-1">
+          <input type="checkbox" checked={$options.insetShadow} on:change={(e) => { $options = { ...$options, insetShadow: e.target.checked }; }} />
+          <label class="text-[11px] text-txt2">Ombre portee</label>
+        </div>
+      {/if}
 
       <!-- Webcam -->
       <div class="mt-1.5 pt-1.5 border-t border-border">
         <div class="text-[10px] text-txt3 uppercase tracking-wider font-medium mb-1">Webcam</div>
         <div class="flex items-center gap-2 py-1">
-          <input type="checkbox" bind:checked={$options.webcam} />
+          <input type="checkbox" checked={$options.webcam} on:change={(e) => { $options = { ...$options, webcam: e.target.checked }; }} />
           <label class="text-[11px] text-txt2">Overlay</label>
         </div>
         <div class="flex items-center gap-2 py-1">
@@ -87,7 +117,7 @@
       <div class="mt-1.5 pt-1.5 border-t border-border">
         <div class="text-[10px] text-txt3 uppercase tracking-wider font-medium mb-1">Captions</div>
         <div class="flex items-center gap-2 py-1">
-          <input type="checkbox" bind:checked={$options.captions} />
+          <input type="checkbox" checked={$options.captions} on:change={(e) => { $options = { ...$options, captions: e.target.checked }; }} />
           <label class="text-[11px] text-txt2">Sous-titres auto</label>
         </div>
         <div class="flex items-center gap-2 py-1">
@@ -116,7 +146,7 @@
       <div class="mt-1.5 pt-1.5 border-t border-border">
         <div class="text-[10px] text-txt3 uppercase tracking-wider font-medium mb-1">Curseur</div>
         <div class="flex items-center gap-2 py-1">
-          <input type="checkbox" bind:checked={$options.clickHighlight} />
+          <input type="checkbox" checked={$options.clickHighlight} on:change={(e) => { $options = { ...$options, clickHighlight: e.target.checked }; }} />
           <label class="text-[11px] text-txt2">Click highlight</label>
         </div>
       </div>
@@ -125,11 +155,11 @@
       <div class="mt-1.5 pt-1.5 border-t border-border">
         <div class="text-[10px] text-txt3 uppercase tracking-wider font-medium mb-1">Debug</div>
         <div class="flex items-center gap-2 py-1">
-          <input type="checkbox" bind:checked={$options.debugClicks} />
+          <input type="checkbox" checked={$options.debugClicks} on:change={(e) => { $options = { ...$options, debugClicks: e.target.checked }; }} />
           <label class="text-[11px] text-txt2">Clics</label>
         </div>
         <div class="flex items-center gap-2 py-1">
-          <input type="checkbox" bind:checked={$options.debugTrail} />
+          <input type="checkbox" checked={$options.debugTrail} on:change={(e) => { $options = { ...$options, debugTrail: e.target.checked }; }} />
           <label class="text-[11px] text-txt2">Trail</label>
         </div>
       </div>
