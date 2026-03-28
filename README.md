@@ -1,10 +1,10 @@
 <p align="center">
   <h1 align="center">Recastr</h1>
-  <p align="center">Turn any screen recording into a polished, professional video.</p>
-  <p align="center">Open source. Local-first. Works with OBS or any MP4.</p>
+  <p align="center">The post-production toolkit that OBS never had.<br/>Turn any screen recording into a polished, professional video.</p>
 </p>
 
 <p align="center">
+  <a href="#why-recastr">Why Recastr</a> &middot;
   <a href="#features">Features</a> &middot;
   <a href="#getting-started">Getting Started</a> &middot;
   <a href="#usage">Usage</a> &middot;
@@ -13,22 +13,34 @@
 
 ---
 
-## What is Recastr?
+## Why Recastr?
 
-Recastr takes a raw screen recording and transforms it into a clean, presentation-ready video with automatic zoom animations, webcam overlay, background styling, and captions — no manual editing needed.
+Tools like Screen Studio, Tella, and Cap bundle their own recorder with an editor. You're locked into their capture pipeline, often on a single platform, and you pay for the package.
 
-Think of it as the post-production layer that OBS never had, or the editor part of Loom/Tella/Screen Studio — but open source and local-first.
+Recastr takes a different approach: **bring your own recording.**
+
+You already have a screen recorder you like — OBS, ShareX, Game Bar, Loom, whatever. Recastr plugs in after the fact and handles the part that actually takes time: making the result look good.
+
+**Source-agnostic** — Drop in any MP4. Recastr doesn't care where it came from.
+
+**OBS-native** — Connects directly to OBS via WebSocket. Hit record from the Recastr UI, and it automatically tracks your cursor, detects your webcam region, and logs everything it needs. When you stop, the editor is pre-loaded and ready to go. No other tool does this.
+
+**Intelligent auto-zoom** — Instead of manually keyframing zoom animations, Recastr analyzes your cursor behavior — click clusters, fast movements that land on a target, sustained pauses — and generates zoom events automatically. You review and tweak, not create from scratch.
+
+**Open source, local-first** — Everything runs on your machine. No upload, no account, no subscription. Your recordings stay yours.
+
+---
 
 ## Features
 
-- **Smart zoom detection** — Automatically detects click clusters, fast cursor arrivals, and sustained pauses to create natural zoom-in moments
+- **Smart zoom detection** — Three detection strategies (click clusters, fast arrivals, sustained pauses) with priority-based merging
 - **Smooth camera animations** — Spring-based damping with easing curves for cinematic zoom transitions
-- **OBS integration** — Connects via OBS WebSocket to start/stop recording and auto-detect cursor + webcam regions
-- **Webcam overlay** — Circle, rounded, or rectangle webcam pip with automatic aspect ratio preservation
-- **Background styles** — Carbon, gradient, and mesh backgrounds for a polished look
+- **OBS WebSocket integration** — Start/stop recording, auto-detect cursor and webcam regions, seamless workflow
+- **Webcam overlay** — Circle, rounded, or rectangle PiP with automatic aspect ratio preservation
+- **Background styles** — Carbon, gradient, and mesh backgrounds
 - **Auto captions** — Whisper-powered subtitle generation (TikTok and classic styles)
-- **Visual timeline editor** — Svelte-based UI to preview, adjust, add or remove zoom events in real time
-- **Source agnostic** — Works with any MP4 screen recording, not just OBS
+- **Visual timeline editor** — Preview, drag, resize, or drag-out-to-delete zoom events in real time
+- **One-click render** — FFmpeg-based export with all effects baked in
 
 ## Getting Started
 
@@ -36,7 +48,6 @@ Think of it as the post-production layer that OBS never had, or the editor part 
 
 - Python 3.10+
 - FFmpeg (`winget install FFmpeg` on Windows)
-- Node.js 18+ (for UI development only)
 
 ### Install
 
@@ -46,7 +57,7 @@ cd recastr
 pip install numpy
 ```
 
-Optional dependencies for enhanced features:
+Optional dependencies:
 
 ```bash
 pip install opencv-python    # Better webcam overlay rendering
@@ -60,43 +71,38 @@ pip install whisper           # Auto captions
 python server.py
 ```
 
-This starts the local server and opens the UI in your browser at `http://localhost:8888`.
+Opens the UI in your browser at `http://localhost:8888`.
 
-Or use the launcher on Windows:
-
-```bash
-RECASTR.bat
-```
+On Windows, double-click `RECASTR.bat`.
 
 ## Usage
 
-### With OBS (recommended)
+### With OBS
 
 1. Enable WebSocket in OBS (Tools > WebSocket Server Settings)
 2. Launch Recastr and connect to OBS from the UI
-3. Hit Record — Recastr logs cursor movement in the background
-4. Stop recording — the UI auto-loads your video, webcam, and cursor data
-5. Adjust zoom events in the timeline, tweak options
-6. Hit Render
+3. Hit Record — cursor movement is tracked automatically
+4. Stop — the editor loads your video, webcam, and cursor data
+5. Review auto-detected zooms, tweak if needed
+6. Render
 
 ### With any MP4
 
 1. Launch Recastr
-2. Drag & drop your screen recording + cursor log into the file panel
-3. Zoom events are auto-detected from cursor data
-4. Adjust and render
+2. Drag & drop your screen recording + cursor log
+3. Review auto-detected zoom events
+4. Render
 
 ## Tech Stack
 
-- **Backend**: Python (auto_zoom.py, cursor_logger.py, server.py)
-- **Frontend**: Svelte 5 + TailwindCSS v4
-- **Rendering**: NumPy + FFmpeg (optional OpenCV for webcam overlay)
-- **OBS**: WebSocket API integration
+- **Backend** — Python (NumPy + FFmpeg, optional OpenCV)
+- **Frontend** — Svelte 5, TailwindCSS v4
+- **OBS** — WebSocket API (obs-websocket 5.x)
 
 ## Contributing
 
-Contributions are welcome! Feel free to open issues or submit pull requests.
+Contributions are welcome. Feel free to open issues or submit pull requests.
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+AGPL-3.0 — see [LICENSE](LICENSE) for details.
