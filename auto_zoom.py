@@ -1,5 +1,5 @@
 """
-AutoZoom - Video Renderer v3
+Recastr - Video Renderer
 Prend ta video OBS + le cursor log et genere une version avec zooms automatiques.
 
 v3:
@@ -522,7 +522,7 @@ def generate_editor_html(video_path, zoom_events, video_w, video_h, video_durati
 <html>
 <head>
 <meta charset="utf-8">
-<title>AutoZoom Editor</title>
+<title>Recastr Editor</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{ background: #1a1a2e; color: #eee; font-family: system-ui, -apple-system, sans-serif; }}
@@ -843,7 +843,7 @@ canvas#previewCanvas {{
 <body>
 <div class="layout">
 <div class="main">
-    <h1>AutoZoom Editor</h1>
+    <h1>Recastr Editor</h1>
     <div class="subtitle">Valide, supprime ou ajuste chaque zoom. Le preview live montre le resultat final.</div>
 
     <div class="views">
@@ -2668,7 +2668,7 @@ def _draw_tiktok_caption(draw, words, active_word_idx, video_w, video_h, font, f
         for wi, word in line:
             f = font_bold
             if wi == active_word_idx:
-                color = (233, 69, 96)  # Rouge AutoZoom
+                color = (233, 69, 96)  # Rouge Recastr
             else:
                 color = (255, 255, 255)
 
@@ -2794,6 +2794,22 @@ def overlay_webcam(frame, cam_frame, out_w, out_h, webcam_config):
         dst_h = out_h - dst_y
     if dst_w < 10 or dst_h < 10:
         return frame
+
+    # Center-crop source to match destination aspect ratio (prevents distortion)
+    dst_aspect = dst_w / max(dst_h, 1)
+    cam_aspect = cam_w / max(cam_h, 1)
+    if abs(cam_aspect - dst_aspect) > 0.05:
+        if cam_aspect > dst_aspect:
+            # Source is wider — crop sides
+            new_w = int(cam_h * dst_aspect)
+            x_off = (cam_w - new_w) // 2
+            cam_frame = cam_frame[:, x_off:x_off+new_w]
+        else:
+            # Source is taller — crop top/bottom
+            new_h = int(cam_w / dst_aspect)
+            y_off = (cam_h - new_h) // 2
+            cam_frame = cam_frame[y_off:y_off+new_h, :]
+        cam_h, cam_w = cam_frame.shape[:2]
 
     if has_cv2:
         cam_resized = cv2.resize(cam_frame, (dst_w, dst_h), interpolation=cv2.INTER_LINEAR)
@@ -3171,7 +3187,7 @@ def render_debug_video(input_path, output_path, events, fps, video_w, video_h, v
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AutoZoom v4")
+    parser = argparse.ArgumentParser(description="Recastr")
     parser.add_argument("video", help="Video (ex: recording.mp4)")
     parser.add_argument("cursor_log", help="Cursor log JSON")
     parser.add_argument("--output", "-o", default=None)
@@ -3236,7 +3252,7 @@ def main():
         args.output = str(video_path.stem) + "_zoomed.mp4"
 
     print("=" * 50)
-    print("  AUTOZOOM v3")
+    print("  RECASTR")
     print("=" * 50)
 
     # Charger

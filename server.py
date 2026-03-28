@@ -1,5 +1,5 @@
 """
-AutoZoom Server - Backend local pour l'editeur HTML.
+Recastr Server - Backend local pour l'editeur.
 Lance un serveur HTTP qui expose une API REST pour:
   - Analyser des videos + cursor logs
   - Transcrire l'audio (Whisper)
@@ -614,7 +614,7 @@ def handle_obs_stop(data=None):
         else:
             # Encore en cours — envoyer le stop signal
             try:
-                stop_file = os.path.join(SCRIPT_DIR, ".autozoom_stop")
+                stop_file = os.path.join(SCRIPT_DIR, ".recastr_stop")
                 print(f"[OBS STOP] Creation stop file: {stop_file}")
                 with open(stop_file, "w") as f:
                     f.write("stop")
@@ -653,7 +653,7 @@ def handle_obs_stop(data=None):
 
         # Nettoyer le stop file
         try:
-            sf = os.path.join(SCRIPT_DIR, ".autozoom_stop")
+            sf = os.path.join(SCRIPT_DIR, ".recastr_stop")
             if os.path.exists(sf):
                 os.remove(sf)
         except:
@@ -793,7 +793,7 @@ ROUTES = {
 }
 
 
-class AutoZoomHandler(http.server.SimpleHTTPRequestHandler):
+class RecastrHandler(http.server.SimpleHTTPRequestHandler):
     """Handler HTTP qui route les API et sert les fichiers statiques."""
 
     def __init__(self, *args, static_dir=None, **kwargs):
@@ -809,6 +809,25 @@ class AutoZoomHandler(http.server.SimpleHTTPRequestHandler):
             code, data = handler()
             self._send_json(code, data)
             return
+
+        # SPA: redirect / to index.html
+        if path == '/' or path == '/app.html':
+            self.path = '/index.html'
+
+        # Try to serve from static dir first (dist/), then fallback to SCRIPT_DIR for videos etc.
+        # Check if file exists in static dir
+        translated = self.translate_path(self.path)
+        if not os.path.exists(translated):
+            # Fallback: try serving from SCRIPT_DIR (for video files, cursor logs, etc.)
+            basename = unquote(path.lstrip('/'))
+            fallback = os.path.join(SCRIPT_DIR, basename)
+            if os.path.isfile(fallback):
+                self.path = self.path  # keep path, temporarily change directory
+                old_dir = self.directory
+                self.directory = SCRIPT_DIR
+                super().do_GET()
+                self.directory = old_dir
+                return
 
         # Serve files
         super().do_GET()
@@ -889,30 +908,34 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="AutoZoom Server")
+    parser = argparse.ArgumentParser(description="Recastr Server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8888)
     parser.add_argument("--no-open", action="store_true", help="Ne pas ouvrir le browser")
     args = parser.parse_args()
 
+    # Serve from dist/ if it exists (Svelte build), otherwise serve from script dir
+    dist_dir = os.path.join(SCRIPT_DIR, "dist")
+    static_dir = dist_dir if os.path.isdir(dist_dir) else SCRIPT_DIR
+    print(f"  Static: {static_dir}")
+
     # Handler factory
     def handler_factory(*a, **kw):
-        return AutoZoomHandler(*a, static_dir=SCRIPT_DIR, **kw)
+        return RecastrHandler(*a, static_dir=static_dir, **kw)
 
     server = ThreadedHTTPServer((args.host, args.port), handler_factory)
     port = server.server_address[1]
 
     url = f"http://{args.host}:{port}"
     print("=" * 50)
-    print("  AUTOZOOM SERVER")
+    print("  RECASTR SERVER")
     print("=" * 50)
     print(f"\n  URL: {url}")
     print(f"  API: {url}/api/...")
-    print(f"  App: {url}/app.html")
     print(f"\n  Ctrl+C pour arreter.\n")
 
     if not args.no_open:
-        webbrowser.open(f"{url}/app.html")
+        webbrowser.open(url)
 
     try:
         server.serve_forever()

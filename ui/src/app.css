@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@source "../src/**/*.svelte";
+@source "../src/**/*.js";
+
+@theme {
+  --color-bg: #0a0a0b;
+  --color-bg2: #111113;
+  --color-bg3: #191a1c;
+  --color-bg4: #26272b;
+  --color-surface: #161618;
+  --color-accent: #8b5cf6;
+  --color-accent2: #a78bfa;
+  --color-red: #ef4444;
+  --color-green: #22c55e;
+  --color-purple: #8b5cf6;
+  --color-yellow: #eab308;
+  --color-blue: #3b82f6;
+  --color-txt: #ededed;
+  --color-txt2: #a1a1a6;
+  --color-txt3: #63636e;
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border2: rgba(255, 255, 255, 0.1);
+}
+
+@layer base {
+  body {
+    font-family: 'Inter', -apple-system, system-ui, 'Segoe UI', sans-serif;
+    background: var(--color-bg);
+    color: var(--color-txt);
+    overflow-x: hidden;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  ::selection {
+    background: rgba(139, 92, 246, 0.3);
+  }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 3px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    cursor: pointer;
+    border: 2px solid var(--color-bg);
+    box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.3);
+    transition: box-shadow 0.15s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+  }
+  input[type="range"]:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+  }
+
+  input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.15s;
+  }
+  input[type="checkbox"]:checked {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 4px;
+    height: 8px;
+    border: solid white;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+
+  select {
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2363636e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 12px;
+    padding-right: 22px !important;
+  }
+}
+
+/* slideUp: used by Toast component */
+@keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }

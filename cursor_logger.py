@@ -1,5 +1,5 @@
 """
-AutoZoom - Cursor Logger v4
+Recastr - Cursor Logger
 
 Fix DPI scaling + calibration pour s'assurer que les coords matchent.
 
@@ -576,7 +576,7 @@ def log_cursor(region, fps, output_path, obs_client=None, cursor_restored=None, 
                 print(f"  {mins:02d}:{secs:02d} | ({norm_x:.2f}, {norm_y:.2f}) | {zone}")
 
             # Check for stop signal file (utilise par le serveur pour arreter proprement)
-            stop_file = os.path.join(os.path.dirname(os.path.abspath(output_path)), ".autozoom_stop")
+            stop_file = os.path.join(os.path.dirname(os.path.abspath(output_path)), ".recastr_stop")
             if os.path.exists(stop_file):
                 print("\n  Signal d'arret recu (stop file)")
                 try:
@@ -633,7 +633,7 @@ def log_cursor(region, fps, output_path, obs_client=None, cursor_restored=None, 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AutoZoom Cursor Logger v4")
+    parser = argparse.ArgumentParser(description="Recastr Cursor Logger")
     parser.add_argument("--obs", action="store_true")
     parser.add_argument("--obs-port", type=int, default=4455)
     parser.add_argument("--obs-password", default="")
@@ -660,7 +660,7 @@ def main():
     sw, sh = get_screen_size()
 
     print("=" * 50)
-    print("  AUTOZOOM v4 - Cursor Logger")
+    print("  RECASTR - Cursor Logger")
     print("=" * 50)
     print(f"\n  Ecran: {sw}x{sh} @ {dpi:.0%} DPI")
 
