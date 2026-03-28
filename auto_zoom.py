@@ -2524,12 +2524,6 @@ def apply_background_frame(frame, bg_template, video_w, video_h, out_w, out_h,
         # Sans cv2: pas de coins arrondis
         result[y_off:y_off+inner_h_final, x_off:x_off+inner_w_final] = resized
 
-    # Bordure fine autour de la video
-    if has_cv2:
-        border_color = (50, 52, 58)
-        cv2.rectangle(result, (x_off-1, y_off-1),
-                      (x_off+inner_w_final, y_off+inner_h_final), border_color, 1)
-
     return result
 
 
@@ -3005,8 +2999,8 @@ def render_video(input_path, output_path, frame_data, fps, video_w, video_h,
                 frame = apply_background_frame(
                     frame, bg_template, video_w, video_h, out_w, out_h,
                     padding_pct=background.get("padding", 0.06),
-                    corner_radius=background.get("corner_radius", 12),
-                    shadow_size=background.get("shadow", 20),
+                    corner_radius=background.get("border_radius", 12),
+                    shadow_size=20 if background.get("inset_shadow", True) else 0,
                 )
 
             # Webcam overlay
