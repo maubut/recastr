@@ -1,0 +1,2013 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoZoom</title>
+<style>
+/* ============================================================
+   AUTOZOOM - Main App
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+    --bg: #0f0f1a;
+    --bg2: #1a1a2e;
+    --bg3: #16213e;
+    --bg4: #0f3460;
+    --red: #e94560;
+    --green: #00b894;
+    --purple: #6c5ce7;
+    --yellow: #f0c040;
+    --blue: #4da6ff;
+    --text: #eeeeee;
+    --text2: #aaaaaa;
+    --text3: #666666;
+    --border: #2a2a4a;
+    --radius: 10px;
+}
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+/* --- HEADER --- */
+.header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+}
+.header h1 { font-size: 22px; color: var(--red); font-weight: 800; }
+.header .version { font-size: 12px; color: var(--text3); margin-top: 4px; }
+.header .status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--text3); margin-left: auto;
+}
+.header .status-dot.connected { background: var(--green); }
+.header .status-dot.recording { background: var(--red); animation: pulse 1s infinite; }
+.header .status-label { font-size: 12px; color: var(--text2); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* --- LAYOUT --- */
+.app-layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    height: calc(100vh - 57px);
+}
+
+/* --- SIDEBAR --- */
+.sidebar {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+}
+.panel {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.panel-header {
+    padding: 10px 14px;
+    font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+    cursor: pointer; user-select: none;
+    border-bottom: 1px solid var(--border);
+}
+.panel-header .icon { font-size: 16px; }
+.panel-header .badge {
+    margin-left: auto; font-size: 11px;
+    padding: 1px 8px; border-radius: 10px;
+    background: var(--bg3); color: var(--text2);
+}
+.panel-body { padding: 12px 14px; }
+.panel-body.collapsed { display: none; }
+
+/* --- DROPZONES --- */
+.dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 8px;
+}
+.dropzone:hover, .dropzone.dragover {
+    border-color: var(--blue);
+    background: rgba(77, 166, 255, 0.05);
+}
+.dropzone.has-file {
+    border-color: var(--green);
+    border-style: solid;
+    background: rgba(0, 184, 148, 0.05);
+}
+.dropzone .dz-label {
+    font-size: 12px; color: var(--text2);
+    margin-bottom: 4px;
+}
+.dropzone .dz-filename {
+    font-size: 13px; font-weight: 600;
+    color: var(--text); word-break: break-all;
+}
+.dropzone .dz-info {
+    font-size: 11px; color: var(--text3); margin-top: 4px;
+}
+
+/* --- BUTTONS --- */
+.btn {
+    padding: 8px 16px;
+    border: none; border-radius: 6px;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer; color: white;
+    transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn-red { background: var(--red); }
+.btn-green { background: var(--green); }
+.btn-purple { background: var(--purple); }
+.btn-blue { background: var(--blue); }
+.btn-dark { background: var(--bg3); color: var(--text2); }
+.btn-sm { padding: 5px 10px; font-size: 11px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+/* --- OBS PANEL --- */
+.obs-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.obs-row label { font-size: 12px; color: var(--text2); min-width: 60px; }
+.obs-row input {
+    flex: 1; padding: 5px 8px;
+    background: var(--bg2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 4px; font-size: 12px;
+}
+
+/* --- OPTIONS --- */
+.opt-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0; font-size: 12px;
+}
+.opt-row label { color: var(--text2); cursor: pointer; }
+.opt-row input[type="checkbox"] { accent-color: var(--blue); }
+.opt-row select, .opt-row input[type="range"] {
+    background: var(--bg2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 4px; padding: 3px 6px; font-size: 11px;
+}
+.opt-group { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.opt-group-title { font-size: 11px; color: var(--text3); margin-bottom: 6px; font-weight: 600; }
+
+/* --- MAIN AREA --- */
+.main-area {
+    display: flex; flex-direction: column;
+    overflow: hidden;
+}
+
+/* --- PREVIEW --- */
+.preview-container {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    background: #000; position: relative; min-height: 300px;
+}
+.preview-container canvas {
+    max-width: 100%; max-height: 100%;
+    cursor: pointer;
+}
+.zoom-overlay {
+    position: absolute;
+    pointer-events: none;
+    z-index: 2;
+}
+.zoom-overlay .zo-dot {
+    position: absolute; width: 14px; height: 14px;
+    border-radius: 50%; background: #e94560; border: 2px solid #fff;
+    transform: translate(-50%, -50%); cursor: grab;
+    pointer-events: all; z-index: 3;
+    box-shadow: 0 0 6px rgba(0,0,0,0.6);
+    transition: transform 0.1s;
+}
+.zoom-overlay .zo-dot:hover { transform: translate(-50%, -50%) scale(1.3); }
+.zoom-overlay .zo-dot.still { background: #f0c040; }
+.zoom-overlay .zo-dot.dragging { cursor: grabbing; transform: translate(-50%, -50%) scale(1.4); }
+.zoom-overlay .zo-rect {
+    position: absolute; border: 2px solid #e94560;
+    background: rgba(233, 69, 96, 0.1);
+    pointer-events: all; cursor: move; z-index: 2;
+}
+.zoom-overlay .zo-rect.still { border-color: #f0c040; background: rgba(240, 192, 64, 0.1); border-style: dashed; }
+.zoom-overlay .zo-rect.selected { border-width: 3px; background: rgba(233, 69, 96, 0.2); }
+.zoom-overlay .zo-handle {
+    position: absolute; width: 10px; height: 10px;
+    background: #fff; border: 2px solid #e94560; border-radius: 2px;
+    cursor: nwse-resize; pointer-events: all; z-index: 4;
+}
+.zoom-overlay .zo-handle.still { border-color: #f0c040; }
+.preview-container video { display: none; }
+.preview-badge {
+    position: absolute; top: 12px; right: 12px;
+    background: #333; color: white;
+    padding: 4px 12px; border-radius: 20px;
+    font-size: 13px; font-weight: 700;
+}
+.preview-placeholder {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 12px;
+    color: var(--text3);
+}
+.preview-placeholder .big-icon { font-size: 48px; }
+
+/* --- TIMELINE --- */
+.timeline-container {
+    height: 120px; background: var(--bg2);
+    border-top: 1px solid var(--border);
+    position: relative; flex-shrink: 0;
+}
+.timeline-canvas {
+    width: 100%; height: 100%;
+    cursor: crosshair;
+}
+
+/* --- BOTTOM BAR --- */
+.bottom-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 16px;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.bottom-bar .time-display {
+    font-family: 'Consolas', monospace;
+    font-size: 14px; color: var(--text);
+    min-width: 120px;
+}
+.bottom-bar .speed-btns { margin-left: auto; display: flex; gap: 4px; }
+.bottom-bar .progress-text { font-size: 12px; color: var(--text2); }
+
+/* --- ZOOM LIST (in sidebar) --- */
+.zoom-item {
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    font-size: 11px;
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.zoom-item:hover { background: var(--bg3); }
+.zoom-item.active { background: var(--bg4); border-left: 3px solid var(--red); }
+.zoom-item.disabled { opacity: 0.3; }
+.zoom-item .z-time { font-family: 'Consolas', monospace; color: var(--text2); }
+.zoom-item .z-type { color: var(--yellow); font-weight: 600; }
+.zoom-item .z-zoom { margin-left: auto; color: var(--red); font-weight: 700; }
+.zoom-item .z-toggle { cursor: pointer; }
+
+/* --- ZOOM EDIT PANEL --- */
+.zoom-edit {
+    background: var(--bg1);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin: 0 0 6px 0;
+    font-size: 11px;
+}
+.zoom-edit .ze-row {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 5px;
+}
+.zoom-edit .ze-row:last-child { margin-bottom: 0; }
+.zoom-edit label {
+    color: var(--text3); min-width: 50px; font-size: 10px; text-transform: uppercase;
+}
+.zoom-edit input[type="range"] {
+    flex: 1; height: 4px; accent-color: var(--red);
+}
+.zoom-edit .ze-val {
+    color: var(--text); font-weight: 700; min-width: 38px; text-align: right; font-family: Consolas, monospace;
+}
+.zoom-edit .ze-actions {
+    display: flex; gap: 4px; margin-top: 4px;
+}
+.zoom-edit .ze-btn {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+    color: var(--text2); padding: 2px 8px; font-size: 10px; cursor: pointer;
+}
+.zoom-edit .ze-btn:hover { background: var(--bg4); color: var(--text); }
+.zoom-edit .ze-btn.danger { color: var(--red); }
+.zoom-edit .ze-btn.danger:hover { background: #e9456022; }
+
+/* --- TOAST --- */
+.toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--bg3); color: var(--text);
+    padding: 10px 24px; border-radius: 8px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; z-index: 100;
+}
+.toast.show { opacity: 1; }
+
+/* --- SCROLLBAR --- */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+/* --- RENDER MODAL --- */
+.modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 50; display: none;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px; min-width: 400px;
+    max-width: 500px;
+}
+.modal h3 { margin-bottom: 16px; }
+.progress-bar {
+    height: 8px; background: var(--bg);
+    border-radius: 4px; overflow: hidden; margin: 12px 0;
+}
+.progress-bar .fill {
+    height: 100%; background: var(--green);
+    border-radius: 4px; transition: width 0.3s;
+    width: 0%;
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <h1>AutoZoom</h1>
+    <span class="version">v5</span>
+    <div id="obsStatusDot" class="status-dot"></div>
+    <span id="obsStatusLabel" class="status-label">OBS deconnecte</span>
+</div>
+
+<!-- LAYOUT -->
+<div class="app-layout">
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+
+    <!-- FILES -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <span class="icon">📁</span> Fichiers
+            <span class="badge" id="filesBadge">0/3</span>
+        </div>
+        <div class="panel-body">
+            <div class="dropzone" id="dzVideo"
+                 ondragover="dzDragOver(event, this)" ondragleave="dzDragLeave(this)"
+                 ondrop="dzDrop(event, this, 'video')" onclick="dzClick('video')">
+                <div class="dz-label">📹 Video ecran</div>
+                <div class="dz-filename" id="dzVideoName">Glisse ta video ici</div>
+                <div class="dz-info" id="dzVideoInfo"></div>
+            </div>
+            <div class="dropzone" id="dzWebcam"
+                 ondragover="dzDragOver(event, this)" ondragleave="dzDragLeave(this)"
+                 ondrop="dzDrop(event, this, 'webcam')" onclick="dzClick('webcam')">
+                <div class="dz-label">🎥 Video webcam (optionnel)</div>
+                <div class="dz-filename" id="dzWebcamName">Glisse ta cam ici</div>
+                <div class="dz-info" id="dzWebcamInfo"></div>
+            </div>
+            <div class="dropzone" id="dzLog"
+                 ondragover="dzDragOver(event, this)" ondragleave="dzDragLeave(this)"
+                 ondrop="dzDrop(event, this, 'log')" onclick="dzClick('log')">
+                <div class="dz-label">📋 Cursor log (.json)</div>
+                <div class="dz-filename" id="dzLogName">Glisse le JSON ici</div>
+                <div class="dz-info" id="dzLogInfo"></div>
+            </div>
+            <input type="file" id="fileInput" style="display:none" accept="*/*">
+            <div class="btn-row">
+                <button class="btn btn-blue btn-sm" id="btnAnalyze" onclick="analyzeFiles()" disabled>
+                    Analyser
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OBS -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <span class="icon">🎬</span> OBS
+            <span class="badge" id="obsBadge">deconnecte</span>
+        </div>
+        <div class="panel-body collapsed">
+            <div class="obs-row">
+                <label>Host</label>
+                <input type="text" id="obsHost" value="localhost" placeholder="localhost">
+            </div>
+            <div class="obs-row">
+                <label>Port</label>
+                <input type="number" id="obsPort" value="4455">
+            </div>
+            <div class="obs-row">
+                <label>Pass</label>
+                <input type="password" id="obsPass" value="" placeholder="(vide si pas configure)">
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-purple btn-sm" id="btnObsConnect" onclick="obsConnect()">Connecter</button>
+                <button class="btn btn-green btn-sm" id="btnObsStart" onclick="obsStart()" disabled>Enregistrer</button>
+                <button class="btn btn-red btn-sm" id="btnObsStop" onclick="obsStop()" disabled>Arreter</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ZOOM EVENTS -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <span class="icon">🔍</span> Zooms
+            <span class="badge" id="zoomBadge">0</span>
+        </div>
+        <div id="zoomBatchBar" style="display:none; padding:6px 8px; border-bottom:1px solid var(--border); font-size:11px;">
+            <div style="font-weight:600; color:var(--text2); margin-bottom:4px;">Batch — tous les zooms</div>
+            <div class="ze-row" style="margin-bottom:3px; display:flex; align-items:center; gap:6px;">
+                <label style="width:50px; color:var(--text3);">Zoom</label>
+                <input type="range" min="1.2" max="4" step="0.1" value="2.0" id="batchZoom" style="flex:1;"
+                       oninput="applyBatch('zoom', +this.value); document.getElementById('batchZoomVal').textContent=this.value+'x'">
+                <span id="batchZoomVal" style="width:35px; color:var(--accent); font-size:11px;">2.0x</span>
+            </div>
+            <div class="ze-row" style="margin-bottom:3px; display:flex; align-items:center; gap:6px;">
+                <label style="width:50px; color:var(--text3);">Hold</label>
+                <input type="range" min="0.3" max="10" step="0.1" value="1.5" id="batchHold" style="flex:1;"
+                       oninput="applyBatch('hold', +this.value); document.getElementById('batchHoldVal').textContent=this.value+'s'">
+                <span id="batchHoldVal" style="width:35px; color:var(--accent); font-size:11px;">1.5s</span>
+            </div>
+            <div class="ze-row" style="margin-bottom:3px; display:flex; align-items:center; gap:6px;">
+                <label style="width:50px; color:var(--text3);">Ease in</label>
+                <input type="range" min="0.1" max="2" step="0.05" value="0.3" id="batchEaseIn" style="flex:1;"
+                       oninput="applyBatch('ease_in', +this.value); document.getElementById('batchEaseInVal').textContent=this.value+'s'">
+                <span id="batchEaseInVal" style="width:35px; color:var(--accent); font-size:11px;">0.3s</span>
+            </div>
+            <div class="ze-row" style="margin-bottom:3px; display:flex; align-items:center; gap:6px;">
+                <label style="width:50px; color:var(--text3);">Ease out</label>
+                <input type="range" min="0.1" max="2" step="0.05" value="0.5" id="batchEaseOut" style="flex:1;"
+                       oninput="applyBatch('ease_out', +this.value); document.getElementById('batchEaseOutVal').textContent=this.value+'s'">
+                <span id="batchEaseOutVal" style="width:35px; color:var(--accent); font-size:11px;">0.5s</span>
+            </div>
+        </div>
+        <div class="panel-body" id="zoomListBody" style="max-height: 250px; overflow-y: auto;">
+            <div style="color: var(--text3); font-size: 12px;">
+                Analyse une video + cursor log d'abord
+            </div>
+        </div>
+    </div>
+
+    <!-- OPTIONS -->
+    <div class="panel">
+        <div class="panel-header" onclick="togglePanel(this)">
+            <span class="icon">⚙️</span> Options
+        </div>
+        <div class="panel-body">
+            <!-- Background -->
+            <div class="opt-row">
+                <input type="checkbox" id="optBg">
+                <label for="optBg">Background</label>
+                <select id="optBgStyle">
+                    <option value="carbon">Carbon</option>
+                    <option value="gradient">Gradient</option>
+                    <option value="mesh">Mesh</option>
+                </select>
+            </div>
+
+            <!-- Webcam -->
+            <div class="opt-group">
+                <div class="opt-group-title">WEBCAM</div>
+                <div class="opt-row">
+                    <input type="checkbox" id="optWebcam">
+                    <label for="optWebcam">Webcam overlay</label>
+                </div>
+                <div class="opt-row">
+                    <label>Forme</label>
+                    <select id="optWebcamShape">
+                        <option value="circle">Cercle</option>
+                        <option value="rounded">Arrondi</option>
+                        <option value="rectangle">Rectangle</option>
+                    </select>
+                </div>
+                <div class="opt-row">
+                    <label>Position</label>
+                    <select id="optWebcamPos">
+                        <option value="bottom-right">Bas-droit</option>
+                        <option value="bottom-left">Bas-gauche</option>
+                        <option value="top-right">Haut-droit</option>
+                        <option value="top-left">Haut-gauche</option>
+                    </select>
+                </div>
+                <div class="opt-row">
+                    <label>Taille</label>
+                    <input type="range" id="optWebcamSize" min="5" max="40" value="20">
+                    <span id="optWebcamSizeVal" style="font-size:11px; color:var(--text3); min-width:30px;">20%</span>
+                </div>
+            </div>
+
+            <!-- Captions -->
+            <div class="opt-group">
+                <div class="opt-group-title">CAPTIONS</div>
+                <div class="opt-row">
+                    <input type="checkbox" id="optCaptions">
+                    <label for="optCaptions">Sous-titres auto</label>
+                </div>
+                <div class="opt-row">
+                    <label>Style</label>
+                    <select id="optCaptionStyle">
+                        <option value="tiktok">TikTok</option>
+                        <option value="classic">Classique</option>
+                    </select>
+                </div>
+                <div class="opt-row">
+                    <label>Modele</label>
+                    <select id="optCaptionModel">
+                        <option value="tiny">tiny (rapide)</option>
+                        <option value="base" selected>base</option>
+                        <option value="small">small</option>
+                        <option value="medium">medium (lent)</option>
+                    </select>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-dark btn-sm" id="btnTranscribe" onclick="startTranscribe()" disabled>
+                        Transcrire
+                    </button>
+                    <span id="transcribeStatus" style="font-size:11px; color:var(--text3);"></span>
+                </div>
+            </div>
+            <!-- Cursor -->
+            <div class="opt-group">
+                <div class="opt-group-title">CURSEUR</div>
+                <div class="opt-row">
+                    <input type="checkbox" id="optClickHighlight" checked>
+                    <label for="optClickHighlight">Click highlight</label>
+                </div>
+            </div>
+            <!-- Debug -->
+            <div class="opt-group">
+                <div class="opt-group-title">DEBUG</div>
+                <div class="opt-row">
+                    <input type="checkbox" id="optDebugClicks">
+                    <label for="optDebugClicks">Afficher tous les clics</label>
+                </div>
+                <div class="opt-row">
+                    <input type="checkbox" id="optDebugTrail">
+                    <label for="optDebugTrail">Trail curseur</label>
+                </div>
+                <div id="debugStats" style="font-size:10px; color:var(--text3); margin-top:4px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RENDER -->
+    <div style="margin-top: auto; padding-top: 8px;">
+        <button class="btn btn-red" id="btnRender" onclick="startRender()" disabled
+                style="width: 100%; justify-content: center; padding: 12px;">
+            Render
+        </button>
+    </div>
+
+</div><!-- /sidebar -->
+
+<!-- MAIN AREA -->
+<div class="main-area">
+    <!-- PREVIEW -->
+    <div class="preview-container" id="previewContainer">
+        <video id="video" muted></video>
+        <video id="webcamVideo" muted style="display:none;"></video>
+        <canvas id="previewCanvas"></canvas>
+        <div id="zoomOverlay" class="zoom-overlay"></div>
+        <div id="previewPlaceholder" class="preview-placeholder">
+            <div class="big-icon">📹</div>
+            <div>Glisse tes fichiers dans le panneau de gauche</div>
+            <div style="font-size: 12px;">ou connecte OBS pour enregistrer directement</div>
+        </div>
+        <div class="preview-badge" id="previewBadge" style="display:none;">1.0x</div>
+    </div>
+
+    <!-- TIMELINE -->
+    <div class="timeline-container" id="timelineContainer" style="display:none;">
+        <canvas class="timeline-canvas" id="timelineCanvas"></canvas>
+    </div>
+
+    <!-- BOTTOM BAR -->
+    <div class="bottom-bar">
+        <button class="btn btn-dark btn-sm" onclick="togglePlay()">⏯</button>
+        <div class="time-display" id="timeDisplay">00:00.0 / 00:00.0</div>
+        <div class="speed-btns">
+            <button class="btn btn-dark btn-sm" onclick="setSpeed(0.5)">0.5x</button>
+            <button class="btn btn-dark btn-sm" onclick="setSpeed(1)">1x</button>
+            <button class="btn btn-dark btn-sm" onclick="setSpeed(2)">2x</button>
+        </div>
+        <div class="progress-text" id="progressText"></div>
+    </div>
+</div><!-- /main-area -->
+
+</div><!-- /app-layout -->
+
+<!-- RENDER MODAL -->
+<div class="modal-overlay" id="renderModal">
+    <div class="modal">
+        <h3 id="renderModalTitle">Render en cours...</h3>
+        <div class="progress-bar"><div class="fill" id="renderProgressFill"></div></div>
+        <div id="renderProgressText" style="font-size: 13px; color: var(--text2); margin-bottom: 16px;">
+            Preparation...
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-dark btn-sm" id="renderModalClose" onclick="closeRenderModal()" style="display:none;">Fermer</button>
+        </div>
+    </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// AUTOZOOM APP - JavaScript
+// ============================================================
+
+const API = '';  // Same origin
+
+// --- State ---
+let videoPath = null;
+let webcamPath = null;
+let logPath = null;
+let videoW = 0, videoH = 0, videoDuration = 0, videoFps = 30;
+let zoomEvents = [];
+let cursorEvents = [];
+let captionSegments = [];
+let webcamInfo = null;
+let analysisReady = false;
+
+const video = document.getElementById('video');
+const webcamVideo = document.getElementById('webcamVideo');
+const previewCanvas = document.getElementById('previewCanvas');
+const previewCtx = previewCanvas.getContext('2d');
+const timelineCanvas = document.getElementById('timelineCanvas');
+const timelineCtx = timelineCanvas.getContext('2d');
+
+// ============================================================
+// UTILITY
+// ============================================================
+
+function fmt(t) {
+    const m = Math.floor(t / 60);
+    const s = t % 60;
+    return `${String(m).padStart(2, '0')}:${s.toFixed(1).padStart(4, '0')}`;
+}
+
+function showToast(msg, duration = 2500) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), duration);
+}
+
+function togglePanel(header) {
+    const body = header.nextElementSibling;
+    body.classList.toggle('collapsed');
+}
+
+async function apiCall(method, path, body = null) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(API + path, opts);
+    return await res.json();
+}
+
+// ============================================================
+// DRAG & DROP / FILE PICKING
+// ============================================================
+
+let currentDropTarget = null;
+
+function dzDragOver(e, el) {
+    e.preventDefault();
+    el.classList.add('dragover');
+}
+
+function dzDragLeave(el) {
+    el.classList.remove('dragover');
+}
+
+function dzDrop(e, el, type) {
+    e.preventDefault();
+    el.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleFile(files[0], type);
+    }
+}
+
+function dzClick(type) {
+    currentDropTarget = type;
+    const input = document.getElementById('fileInput');
+    if (type === 'log') {
+        input.accept = '.json';
+    } else {
+        input.accept = 'video/*,.mp4,.mkv,.avi,.mov,.webm';
+    }
+    input.click();
+}
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+    if (e.target.files.length > 0 && currentDropTarget) {
+        handleFile(e.target.files[0], currentDropTarget);
+    }
+    e.target.value = '';  // Reset
+});
+
+async function handleFile(file, type) {
+    // On a besoin du chemin reel pour le server Python.
+    // Avec un <input type=file>, on n'a pas le chemin complet (securite browser).
+    // Solution: on upload le fichier ou on demande le chemin.
+    // Pour l'instant, on utilise le nom et on laisse l'utilisateur confirmer le chemin.
+
+    const dz = document.getElementById(type === 'video' ? 'dzVideo' : type === 'webcam' ? 'dzWebcam' : 'dzLog');
+    const nameEl = dz.querySelector('.dz-filename');
+    const infoEl = dz.querySelector('.dz-info');
+
+    // NOTE: Le browser ne donne pas le chemin reel des fichiers pour raison de securite.
+    // On va demander a l'utilisateur via un prompt, OU utiliser le mode OBS qui connait les chemins.
+    // Alternative: le server pourrait scanner les dossiers connus.
+
+    nameEl.textContent = file.name;
+    infoEl.textContent = `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+    dz.classList.add('has-file');
+
+    // Pour les fichiers video: charger dans le player pour le preview
+    if (type === 'video') {
+        const url = URL.createObjectURL(file);
+        video.src = url;
+        video.load();
+        video.addEventListener('loadedmetadata', () => {
+            videoW = video.videoWidth;
+            videoH = video.videoHeight;
+            videoDuration = video.duration;
+            infoEl.textContent = `${videoW}x${videoH}, ${videoDuration.toFixed(1)}s, ${(file.size / 1024 / 1024).toFixed(1)} MB`;
+            setupPreview();
+        }, { once: true });
+    } else if (type === 'webcam') {
+        const url = URL.createObjectURL(file);
+        webcamVideo.src = url;
+        webcamVideo.load();
+        document.getElementById('optWebcam').checked = true;
+    } else if (type === 'log') {
+        // Lire le JSON cursor log directement dans le browser
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            cursorEvents = data.events || [];
+            const meta = data.metadata || {};
+            webcamInfo = meta.webcam || null;
+            infoEl.textContent = `${cursorEvents.length} events, ${(meta.duration || 0).toFixed(1)}s`;
+
+            // Si le log contient le video_file, l'afficher comme hint
+            if (meta.video_file) {
+                infoEl.textContent += ` | Video: ${meta.video_file.split(/[\\/]/).pop()}`;
+            }
+
+            // Auto-detect zooms cote client
+            if (cursorEvents.length > 0) {
+                analyzeLocal();
+            }
+        } catch (e) {
+            infoEl.textContent = `Erreur: ${e.message}`;
+        }
+    }
+
+    updateFilesBadge();
+}
+
+function updateFilesBadge() {
+    let count = 0;
+    if (document.getElementById('dzVideo').classList.contains('has-file')) count++;
+    if (document.getElementById('dzWebcam').classList.contains('has-file')) count++;
+    if (document.getElementById('dzLog').classList.contains('has-file')) count++;
+    document.getElementById('filesBadge').textContent = `${count}/3`;
+
+    // Enable analyze if we have video + log
+    const hasVideo = document.getElementById('dzVideo').classList.contains('has-file');
+    const hasLog = document.getElementById('dzLog').classList.contains('has-file');
+    document.getElementById('btnAnalyze').disabled = !(hasVideo && hasLog);
+    document.getElementById('btnRender').disabled = !analysisReady;
+    document.getElementById('btnTranscribe').disabled = !hasVideo;
+}
+
+// ============================================================
+// ANALYSIS (client-side zoom detection from cursor events)
+// ============================================================
+
+function analyzeLocal() {
+    // Simple zoom detection from cursor events (mirrors Python logic)
+    if (!cursorEvents || cursorEvents.length === 0) return;
+
+    zoomEvents = [];
+    const maxTime = cursorEvents[cursorEvents.length - 1].t - 3.0;
+
+    // Click-based zooms
+    const clicks = cursorEvents.filter(e => e.click && e.t < maxTime && e.in === true);
+    for (const ev of clicks) {
+        zoomEvents.push({
+            id: zoomEvents.length,
+            time: ev.t,
+            nx: ev.nx || 0.5,
+            ny: ev.ny || 0.5,
+            zoom: 2.0,
+            hold: 1.5,
+            ease_in: 0.3,
+            ease_out: 0.5,
+            type: 'click',
+            enabled: true,
+        });
+    }
+
+    // Merge close zooms
+    zoomEvents.sort((a, b) => a.time - b.time);
+    const merged = [];
+    for (const z of zoomEvents) {
+        if (merged.length > 0 && z.time - merged[merged.length - 1].time < 1.0) {
+            merged[merged.length - 1].hold += 1.0;
+            continue;
+        }
+        merged.push(z);
+    }
+    zoomEvents = merged;
+
+    analysisReady = true;
+    renderZoomList();
+    renderTimeline();
+    updateFilesBadge();
+    document.getElementById('zoomBadge').textContent = zoomEvents.length;
+    showToast(`${zoomEvents.length} zooms detectes`);
+}
+
+async function analyzeFiles() {
+    // If we have a server path, use the API. Otherwise use local analysis.
+    if (videoPath && logPath) {
+        showToast('Analyse en cours...');
+        const res = await apiCall('POST', '/api/analyze', {
+            video_path: videoPath,
+            cursor_log_path: logPath,
+        });
+        if (res.success) {
+            zoomEvents = res.zoom_events.map((z, i) => ({ ...z, id: i, enabled: true }));
+            cursorEvents = res.cursor_events || cursorEvents;
+            webcamInfo = res.webcam_info;
+            videoW = res.video_info.width;
+            videoH = res.video_info.height;
+            videoDuration = res.video_info.duration;
+            videoFps = res.video_info.fps;
+            analysisReady = true;
+            renderZoomList();
+            renderTimeline();
+            updateFilesBadge();
+            showToast(`${zoomEvents.length} zooms detectes`);
+        } else {
+            showToast(`Erreur: ${res.error}`);
+        }
+    } else {
+        // Local analysis already done when log was loaded
+        showToast('Analyse locale deja faite');
+    }
+}
+
+// ============================================================
+// ZOOM LIST
+// ============================================================
+
+let selectedZoomIdx = -1;
+
+function renderZoomList() {
+    const container = document.getElementById('zoomListBody');
+    const batchBar = document.getElementById('zoomBatchBar');
+    if (zoomEvents.length === 0) {
+        container.innerHTML = '<div style="color:var(--text3);font-size:12px;">Aucun zoom</div>';
+        selectedZoomIdx = -1;
+        if (batchBar) batchBar.style.display = 'none';
+        return;
+    }
+    if (batchBar) batchBar.style.display = 'block';
+    container.innerHTML = zoomEvents.map((z, i) => {
+        const isSelected = (i === selectedZoomIdx);
+        let html = `
+        <div class="zoom-item ${z.enabled ? '' : 'disabled'} ${isSelected ? 'active' : ''}"
+             onclick="selectZoom(${i})" id="zoomItem${i}">
+            <input type="checkbox" class="z-toggle" ${z.enabled ? 'checked' : ''}
+                   onclick="event.stopPropagation(); zoomEvents[${i}].enabled = this.checked; renderTimeline();">
+            <span class="z-time">${fmt(z.time)}</span>
+            <span class="z-type">${z.type}</span>
+            <span class="z-zoom">${z.zoom.toFixed(1)}x</span>
+        </div>`;
+        if (isSelected) {
+            const easeIn = z.ease_in || 0.3;
+            const hold = z.hold || 1.5;
+            const easeOut = z.ease_out || 0.5;
+            html += `
+            <div class="zoom-edit" id="zoomEdit${i}">
+                <div class="ze-row">
+                    <label>Zoom</label>
+                    <input type="range" min="1.2" max="4" step="0.1" value="${z.zoom}"
+                           oninput="updateZoomProp(${i}, 'zoom', +this.value)">
+                    <span class="ze-val" id="zeZoom${i}">${z.zoom.toFixed(1)}x</span>
+                </div>
+                <div class="ze-row">
+                    <label>Temps</label>
+                    <input type="range" min="0" max="${videoDuration || 60}" step="0.1" value="${z.time}"
+                           oninput="updateZoomProp(${i}, 'time', +this.value)">
+                    <span class="ze-val" id="zeTime${i}">${fmt(z.time)}</span>
+                </div>
+                <div class="ze-row">
+                    <label>Hold</label>
+                    <input type="range" min="0.3" max="10" step="0.1" value="${hold}"
+                           oninput="updateZoomProp(${i}, 'hold', +this.value)">
+                    <span class="ze-val" id="zeHold${i}">${hold.toFixed(1)}s</span>
+                </div>
+                <div class="ze-row">
+                    <label>Ease in</label>
+                    <input type="range" min="0.1" max="2" step="0.05" value="${easeIn}"
+                           oninput="updateZoomProp(${i}, 'ease_in', +this.value)">
+                    <span class="ze-val" id="zeEaseIn${i}">${easeIn.toFixed(2)}s</span>
+                </div>
+                <div class="ze-row">
+                    <label>Ease out</label>
+                    <input type="range" min="0.1" max="2" step="0.05" value="${easeOut}"
+                           oninput="updateZoomProp(${i}, 'ease_out', +this.value)">
+                    <span class="ze-val" id="zeEaseOut${i}">${easeOut.toFixed(2)}s</span>
+                </div>
+                <div class="ze-actions">
+                    <button class="ze-btn" onclick="duplicateZoom(${i})">Dupliquer</button>
+                    <button class="ze-btn danger" onclick="deleteZoom(${i})">Supprimer</button>
+                </div>
+            </div>`;
+        }
+        return html;
+    }).join('');
+    document.getElementById('zoomBadge').textContent = zoomEvents.filter(z => z.enabled).length;
+}
+
+function selectZoom(idx) {
+    if (selectedZoomIdx === idx) {
+        selectedZoomIdx = -1; // toggle off
+    } else {
+        selectedZoomIdx = idx;
+        seekTo(zoomEvents[idx].time);
+    }
+    renderZoomList();
+    renderTimeline();
+}
+
+function updateZoomProp(idx, prop, val) {
+    zoomEvents[idx][prop] = val;
+    // Update displayed value
+    const z = zoomEvents[idx];
+    const el = (id) => document.getElementById(id);
+    if (prop === 'zoom') el(`zeZoom${idx}`).textContent = val.toFixed(1) + 'x';
+    if (prop === 'time') { el(`zeTime${idx}`).textContent = fmt(val); seekTo(val); }
+    if (prop === 'hold') el(`zeHold${idx}`).textContent = val.toFixed(1) + 's';
+    if (prop === 'ease_in') el(`zeEaseIn${idx}`).textContent = val.toFixed(2) + 's';
+    if (prop === 'ease_out') el(`zeEaseOut${idx}`).textContent = val.toFixed(2) + 's';
+    // Update zoom display in list item
+    const zoomSpan = document.querySelector(`#zoomItem${idx} .z-zoom`);
+    if (zoomSpan && prop === 'zoom') zoomSpan.textContent = val.toFixed(1) + 'x';
+    const timeSpan = document.querySelector(`#zoomItem${idx} .z-time`);
+    if (timeSpan && prop === 'time') timeSpan.textContent = fmt(val);
+    renderTimeline();
+}
+
+function duplicateZoom(idx) {
+    const orig = zoomEvents[idx];
+    const copy = JSON.parse(JSON.stringify(orig));
+    copy.time = orig.time + (orig.hold || 1.5) + (orig.ease_out || 0.5) + 0.5;
+    zoomEvents.splice(idx + 1, 0, copy);
+    selectedZoomIdx = idx + 1;
+    renderZoomList();
+    renderTimeline();
+}
+
+function deleteZoom(idx) {
+    zoomEvents.splice(idx, 1);
+    selectedZoomIdx = -1;
+    renderZoomList();
+    renderTimeline();
+}
+
+function applyBatch(prop, val) {
+    for (const z of zoomEvents) {
+        z[prop] = val;
+    }
+    renderZoomList();
+    renderTimeline();
+}
+
+function seekTo(t) {
+    video.currentTime = t;
+    if (webcamVideo.src) webcamVideo.currentTime = t;
+}
+
+// ============================================================
+// PREVIEW
+// ============================================================
+
+function setupPreview() {
+    previewCanvas.width = videoW || 1920;
+    previewCanvas.height = videoH || 1080;
+    previewCanvas.style.display = 'block';
+    document.getElementById('previewPlaceholder').style.display = 'none';
+    document.getElementById('previewBadge').style.display = 'block';
+    document.getElementById('timelineContainer').style.display = 'block';
+
+    // Setup timeline canvas
+    timelineCanvas.width = timelineCanvas.parentElement.clientWidth;
+    timelineCanvas.height = 120;
+    renderTimeline();
+    requestAnimationFrame(drawPreview);
+}
+
+// Helper: roundRect
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
+function getZoomState(t) {
+    let zoom = 1.0, cx = 0.5, cy = 0.5;
+    for (const z of zoomEvents) {
+        if (!z.enabled) continue;
+        const start = z.time;
+        const easeIn = z.ease_in || 0.3;
+        const hold = z.hold || 1.5;
+        const easeOut = z.ease_out || 0.5;
+        const end = start + easeIn + hold + easeOut;
+
+        if (t < start || t > end) continue;
+
+        let progress;
+        if (t < start + easeIn) {
+            progress = (t - start) / easeIn;
+            progress = progress * progress * (3 - 2 * progress); // smoothstep
+        } else if (t < start + easeIn + hold) {
+            progress = 1.0;
+        } else {
+            progress = 1.0 - (t - start - easeIn - hold) / easeOut;
+            progress = progress * progress * (3 - 2 * progress);
+        }
+
+        const thisZoom = 1.0 + (z.zoom - 1.0) * progress;
+        if (thisZoom > zoom) {
+            zoom = thisZoom;
+            cx = z.nx || 0.5;
+            cy = z.ny || 0.5;
+        }
+    }
+    return { zoom, cx, cy };
+}
+
+function drawPreview() {
+    if (!video.videoWidth) {
+        requestAnimationFrame(drawPreview);
+        return;
+    }
+
+    const t = video.currentTime;
+    const state = getZoomState(t);
+
+    // Draw zoomed video
+    if (state.zoom > 1.02) {
+        const cw = videoW / state.zoom;
+        const ch = videoH / state.zoom;
+        const cx = state.cx * videoW;
+        const cy = state.cy * videoH;
+        const x1 = Math.max(0, Math.min(cx - cw / 2, videoW - cw));
+        const y1 = Math.max(0, Math.min(cy - ch / 2, videoH - ch));
+        previewCtx.drawImage(video, x1, y1, cw, ch, 0, 0, videoW, videoH);
+    } else {
+        previewCtx.drawImage(video, 0, 0, videoW, videoH);
+    }
+
+    // Webcam overlay
+    const optWebcam = document.getElementById('optWebcam').checked;
+    if (optWebcam && webcamVideo.src && webcamVideo.videoWidth > 0) {
+        drawWebcamOverlay(webcamVideo, 0, 0, webcamVideo.videoWidth, webcamVideo.videoHeight);
+    } else if (optWebcam && webcamInfo && webcamInfo.nx !== undefined) {
+        // Legacy: extract from main video
+        const srcX = webcamInfo.nx * videoW;
+        const srcY = webcamInfo.ny * videoH;
+        const srcW = webcamInfo.nw * videoW;
+        const srcH = webcamInfo.nh * videoH;
+        drawWebcamOverlay(video, srcX, srcY, srcW, srcH);
+    }
+
+    // --- Click highlight (ripple effect) ---
+    if (document.getElementById('optClickHighlight').checked && cursorEvents.length > 0) {
+        const ct = t;
+        // Binary search for nearest event
+        let lo = 0, hi = cursorEvents.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi + 1) >> 1;
+            if (cursorEvents[mid].t <= ct) lo = mid; else hi = mid - 1;
+        }
+        const cp = cursorEvents[lo];
+        if (cp && cp.click && cp.in === true && Math.abs(cp.t - ct) < 0.6) {
+            let cpx = cp.nx * videoW;
+            let cpy = cp.ny * videoH;
+            // If zoomed, remap cursor position into the zoomed view
+            if (state.zoom > 1.05) {
+                const cw = videoW / state.zoom;
+                const ch = videoH / state.zoom;
+                const sx = Math.max(0, Math.min(state.cx * videoW - cw / 2, videoW - cw));
+                const sy = Math.max(0, Math.min(state.cy * videoH - ch / 2, videoH - ch));
+                cpx = (cp.nx * videoW - sx) / cw * videoW;
+                cpy = (cp.ny * videoH - sy) / ch * videoH;
+            }
+            if (cpx >= 0 && cpx <= videoW && cpy >= 0 && cpy <= videoH) {
+                const age = Math.abs(ct - cp.t); // 0..0.6
+                const progress = age / 0.6;
+                const alpha = Math.max(0, 0.7 * (1 - progress));
+                const r1 = 12 + 20 * progress;
+                const r2 = 6 + 14 * progress;
+                previewCtx.save();
+                previewCtx.strokeStyle = `rgba(233, 69, 96, ${alpha})`;
+                previewCtx.lineWidth = 3;
+                previewCtx.beginPath(); previewCtx.arc(cpx, cpy, r1, 0, Math.PI * 2); previewCtx.stroke();
+                previewCtx.lineWidth = 2;
+                previewCtx.beginPath(); previewCtx.arc(cpx, cpy, r2, 0, Math.PI * 2); previewCtx.stroke();
+                // Center dot
+                previewCtx.fillStyle = `rgba(233, 69, 96, ${alpha + 0.1})`;
+                previewCtx.beginPath(); previewCtx.arc(cpx, cpy, 4, 0, Math.PI * 2); previewCtx.fill();
+                previewCtx.restore();
+            }
+        }
+    }
+
+    // --- Debug overlays ---
+    const dbgClicks = document.getElementById('optDebugClicks').checked;
+    const dbgTrail  = document.getElementById('optDebugTrail').checked;
+
+    if ((dbgClicks || dbgTrail) && cursorEvents.length > 0) {
+        let inCount = 0, outCount = 0, clickIn = 0, clickOut = 0;
+
+        // Debug trail: draw cursor path for last 2 seconds
+        if (dbgTrail) {
+            previewCtx.save();
+            previewCtx.lineWidth = 1.5;
+            previewCtx.lineCap = 'round';
+            const trailWindow = 2.0; // seconds
+            let started = false;
+            for (let i = 0; i < cursorEvents.length; i++) {
+                const ev = cursorEvents[i];
+                if (ev.t < t - trailWindow || ev.t > t) continue;
+                const px = (ev.nx || 0) * videoW;
+                const py = (ev.ny || 0) * videoH;
+                const age = (t - ev.t) / trailWindow; // 0=now, 1=old
+                const alpha = Math.max(0.05, 1.0 - age);
+                previewCtx.strokeStyle = `rgba(0, 200, 255, ${alpha})`;
+                if (!started) {
+                    previewCtx.beginPath();
+                    previewCtx.moveTo(px, py);
+                    started = true;
+                } else {
+                    previewCtx.lineTo(px, py);
+                    previewCtx.stroke();
+                    previewCtx.beginPath();
+                    previewCtx.moveTo(px, py);
+                }
+            }
+            previewCtx.restore();
+        }
+
+        // Debug clicks: draw ALL click dots on the video
+        if (dbgClicks) {
+            previewCtx.save();
+            for (let i = 0; i < cursorEvents.length; i++) {
+                const ev = cursorEvents[i];
+                if (!ev.click) continue;
+                const isIn = ev.in === true;
+                if (isIn) clickIn++; else clickOut++;
+
+                const px = (ev.nx || 0) * videoW;
+                const py = (ev.ny || 0) * videoH;
+                const radius = 8;
+
+                // Outer ring
+                previewCtx.beginPath();
+                previewCtx.arc(px, py, radius + 2, 0, Math.PI * 2);
+                previewCtx.strokeStyle = '#000';
+                previewCtx.lineWidth = 2;
+                previewCtx.stroke();
+
+                // Filled dot
+                previewCtx.beginPath();
+                previewCtx.arc(px, py, radius, 0, Math.PI * 2);
+                previewCtx.fillStyle = isIn ? 'rgba(0, 220, 80, 0.85)' : 'rgba(255, 50, 50, 0.85)';
+                previewCtx.fill();
+                previewCtx.strokeStyle = '#fff';
+                previewCtx.lineWidth = 1.5;
+                previewCtx.stroke();
+
+                // Timestamp label
+                previewCtx.font = '10px monospace';
+                previewCtx.fillStyle = '#fff';
+                previewCtx.strokeStyle = '#000';
+                previewCtx.lineWidth = 2;
+                const label = ev.t.toFixed(1) + 's';
+                previewCtx.strokeText(label, px + 10, py + 3);
+                previewCtx.fillText(label, px + 10, py + 3);
+            }
+            previewCtx.restore();
+
+            // Update debug stats
+            document.getElementById('debugStats').textContent =
+                `Clics: ${clickIn} in-zone (vert) / ${clickOut} hors-zone (rouge) — Total events: ${cursorEvents.length}`;
+        } else {
+            document.getElementById('debugStats').textContent = '';
+        }
+
+        // Draw crosshair at current cursor position
+        if (dbgTrail) {
+            // Find nearest event to current time
+            let nearest = null, bestDt = Infinity;
+            for (let i = 0; i < cursorEvents.length; i++) {
+                const d = Math.abs(cursorEvents[i].t - t);
+                if (d < bestDt) { bestDt = d; nearest = cursorEvents[i]; }
+            }
+            if (nearest && bestDt < 0.2) {
+                const px = (nearest.nx || 0) * videoW;
+                const py = (nearest.ny || 0) * videoH;
+                previewCtx.save();
+                previewCtx.strokeStyle = 'rgba(255, 255, 0, 0.8)';
+                previewCtx.lineWidth = 1;
+                // Horizontal
+                previewCtx.beginPath();
+                previewCtx.moveTo(px - 15, py);
+                previewCtx.lineTo(px + 15, py);
+                previewCtx.stroke();
+                // Vertical
+                previewCtx.beginPath();
+                previewCtx.moveTo(px, py - 15);
+                previewCtx.lineTo(px, py + 15);
+                previewCtx.stroke();
+                previewCtx.restore();
+            }
+        }
+    }
+
+    // Badge
+    document.getElementById('previewBadge').textContent = state.zoom.toFixed(1) + 'x';
+    document.getElementById('previewBadge').style.background = state.zoom > 1.05 ? 'var(--red)' : '#333';
+
+    // Time display
+    document.getElementById('timeDisplay').textContent = `${fmt(t)} / ${fmt(videoDuration)}`;
+
+    // Timeline playhead
+    drawTimelinePlayhead(t);
+
+    requestAnimationFrame(drawPreview);
+}
+
+function drawWebcamOverlay(src, srcX, srcY, srcW, srcH) {
+    const shape = document.getElementById('optWebcamShape').value;
+    const pos = document.getElementById('optWebcamPos').value;
+    const sizePct = parseInt(document.getElementById('optWebcamSize').value) / 100;
+
+    const camAspect = srcW / Math.max(srcH, 1);
+    const dstW = videoW * sizePct;
+    const dstH = dstW / camAspect;
+    const margin = videoW * 0.02;
+
+    let dstX, dstY;
+    if (pos === 'top-left') { dstX = margin; dstY = margin; }
+    else if (pos === 'top-right') { dstX = videoW - dstW - margin; dstY = margin; }
+    else if (pos === 'bottom-right') { dstX = videoW - dstW - margin; dstY = videoH - dstH - margin; }
+    else { dstX = margin; dstY = videoH - dstH - margin; }
+
+    previewCtx.save();
+    if (shape === 'circle') {
+        const cx = dstX + dstW / 2;
+        const cy = dstY + dstH / 2;
+        const r = Math.min(dstW, dstH) / 2;
+        previewCtx.beginPath();
+        previewCtx.arc(cx, cy, r, 0, Math.PI * 2);
+        previewCtx.clip();
+        try { previewCtx.drawImage(src, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH); } catch(e) {}
+        previewCtx.restore();
+        previewCtx.save();
+        previewCtx.strokeStyle = '#fff';
+        previewCtx.lineWidth = 3;
+        previewCtx.beginPath();
+        previewCtx.arc(cx, cy, r, 0, Math.PI * 2);
+        previewCtx.stroke();
+    } else if (shape === 'rounded') {
+        const r = Math.min(dstW, dstH) / 6;
+        roundRect(previewCtx, dstX, dstY, dstW, dstH, r);
+        previewCtx.clip();
+        try { previewCtx.drawImage(src, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH); } catch(e) {}
+        previewCtx.restore();
+        previewCtx.save();
+        previewCtx.strokeStyle = '#fff';
+        previewCtx.lineWidth = 3;
+        roundRect(previewCtx, dstX, dstY, dstW, dstH, r);
+        previewCtx.stroke();
+    } else {
+        try { previewCtx.drawImage(src, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH); } catch(e) {}
+        previewCtx.restore();
+        previewCtx.save();
+        previewCtx.strokeStyle = '#fff';
+        previewCtx.lineWidth = 3;
+        previewCtx.strokeRect(dstX, dstY, dstW, dstH);
+    }
+    previewCtx.restore();
+}
+
+// ============================================================
+// TIMELINE
+// ============================================================
+
+function renderTimeline() {
+    const w = timelineCanvas.width;
+    const h = timelineCanvas.height;
+    timelineCtx.clearRect(0, 0, w, h);
+    timelineCtx.fillStyle = '#111';
+    timelineCtx.fillRect(0, 0, w, h);
+
+    if (videoDuration <= 0) return;
+
+    // Time markers
+    const step = videoDuration > 120 ? 30 : videoDuration > 30 ? 10 : 5;
+    timelineCtx.strokeStyle = '#333';
+    timelineCtx.fillStyle = '#555';
+    timelineCtx.font = '10px Consolas';
+    for (let t = 0; t <= videoDuration; t += step) {
+        const x = (t / videoDuration) * w;
+        timelineCtx.beginPath();
+        timelineCtx.moveTo(x, 0);
+        timelineCtx.lineTo(x, h);
+        timelineCtx.stroke();
+        timelineCtx.fillText(fmt(t), x + 3, 12);
+    }
+
+    // Zoom events
+    for (let i = 0; i < zoomEvents.length; i++) {
+        const z = zoomEvents[i];
+        if (!z.enabled) continue;
+        const start = z.time;
+        const dur = (z.ease_in || 0.3) + (z.hold || 1.5) + (z.ease_out || 0.5);
+        const x1 = (start / videoDuration) * w;
+        const x2 = ((start + dur) / videoDuration) * w;
+
+        const color = z.type === 'click' ? '#e94560' : z.type === 'still' ? '#f0c040' : '#6c5ce7';
+        const isSelected = (i === selectedZoomIdx);
+        timelineCtx.fillStyle = isSelected ? color + '88' : color + '44';
+        timelineCtx.fillRect(x1, 20, x2 - x1, h - 40);
+        timelineCtx.fillStyle = color;
+        timelineCtx.fillRect(x1, 20, 3, h - 40);
+
+        // Selected highlight border
+        if (isSelected) {
+            timelineCtx.strokeStyle = color;
+            timelineCtx.lineWidth = 2;
+            timelineCtx.strokeRect(x1, 20, x2 - x1, h - 40);
+        }
+
+        // Resize handles (edges)
+        if (isSelected) {
+            timelineCtx.fillStyle = '#fff';
+            timelineCtx.fillRect(x1 - 1, 24, 4, h - 48);
+            timelineCtx.fillRect(x2 - 3, 24, 4, h - 48);
+        }
+
+        // Zoom label
+        timelineCtx.fillStyle = '#fff';
+        timelineCtx.font = '10px Consolas';
+        if (x2 - x1 > 30) {
+            timelineCtx.fillText(z.zoom.toFixed(1) + 'x', x1 + 8, 34);
+        }
+    }
+}
+
+function drawTimelinePlayhead(t) {
+    // Redraw minimal playhead over existing timeline
+    const w = timelineCanvas.width;
+    const h = timelineCanvas.height;
+    const x = (t / Math.max(videoDuration, 0.1)) * w;
+
+    // We need to redraw the whole timeline to clear old playhead
+    // (optimized: only redraw if moved significantly)
+    renderTimeline();
+    timelineCtx.strokeStyle = '#fff';
+    timelineCtx.lineWidth = 2;
+    timelineCtx.beginPath();
+    timelineCtx.moveTo(x, 0);
+    timelineCtx.lineTo(x, h);
+    timelineCtx.stroke();
+}
+
+// Timeline mouse interaction: click to seek, drag to move zooms, resize edges
+let tlDrag = null; // { type: 'move'|'resize-left'|'resize-right', idx, startX, ... }
+const EDGE_PX = 8; // pixels from edge to trigger resize
+
+function hitTestTimeline(px, py) {
+    // Returns { idx, zone: 'left'|'right'|'body' } or null
+    const w = timelineCanvas.width;
+    for (let i = zoomEvents.length - 1; i >= 0; i--) {
+        const z = zoomEvents[i];
+        if (!z.enabled) continue;
+        const dur = (z.ease_in || 0.3) + (z.hold || 1.5) + (z.ease_out || 0.5);
+        const x1 = (z.time / videoDuration) * w;
+        const x2 = ((z.time + dur) / videoDuration) * w;
+        if (px >= x1 - 2 && px <= x2 + 2 && py >= 20 && py <= timelineCanvas.height - 20) {
+            if (px <= x1 + EDGE_PX) return { idx: i, zone: 'left' };
+            if (px >= x2 - EDGE_PX) return { idx: i, zone: 'right' };
+            return { idx: i, zone: 'body' };
+        }
+    }
+    return null;
+}
+
+timelineCanvas.addEventListener('mousedown', (e) => {
+    if (videoDuration <= 0) return;
+    const rect = timelineCanvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const hit = hitTestTimeline(px, py);
+    if (hit) {
+        const z = zoomEvents[hit.idx];
+        if (hit.zone === 'body') {
+            tlDrag = { type: 'move', idx: hit.idx, startX: px, startTime: z.time, moved: false };
+            timelineCanvas.style.cursor = 'grabbing';
+        } else if (hit.zone === 'left') {
+            tlDrag = { type: 'resize-left', idx: hit.idx, startX: px,
+                       startTime: z.time, startEaseIn: z.ease_in || 0.3, moved: false };
+            timelineCanvas.style.cursor = 'ew-resize';
+        } else if (hit.zone === 'right') {
+            tlDrag = { type: 'resize-right', idx: hit.idx, startX: px,
+                       startHold: z.hold || 1.5, startEaseOut: z.ease_out || 0.5, moved: false };
+            timelineCanvas.style.cursor = 'ew-resize';
+        }
+        selectedZoomIdx = hit.idx;
+        renderZoomList();
+        e.preventDefault();
+    }
+});
+
+timelineCanvas.addEventListener('mousemove', (e) => {
+    const rect = timelineCanvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+
+    if (tlDrag) {
+        const dx = px - tlDrag.startX;
+        const dt = (dx / timelineCanvas.width) * videoDuration;
+        const z = zoomEvents[tlDrag.idx];
+        tlDrag.moved = true;
+
+        if (tlDrag.type === 'move') {
+            const newTime = Math.max(0, Math.min(videoDuration - 1, tlDrag.startTime + dt));
+            z.time = Math.round(newTime * 100) / 100;
+            seekTo(newTime);
+        } else if (tlDrag.type === 'resize-left') {
+            // Drag left edge: shift start time + adjust ease_in to keep end stable
+            const newTime = Math.max(0, tlDrag.startTime + dt);
+            const timeDiff = newTime - tlDrag.startTime;
+            z.time = Math.round(newTime * 100) / 100;
+            z.ease_in = Math.max(0.1, Math.round((tlDrag.startEaseIn - timeDiff) * 100) / 100);
+            seekTo(newTime);
+        } else if (tlDrag.type === 'resize-right') {
+            // Drag right edge: adjust hold duration (dt is already in seconds)
+            const newHold = Math.max(0.3, tlDrag.startHold + dt);
+            z.hold = Math.round(newHold * 100) / 100;
+        }
+
+        renderTimeline();
+        renderZoomList();
+    } else {
+        // Cursor hint based on zone
+        const hit = hitTestTimeline(px, py);
+        if (!hit) { timelineCanvas.style.cursor = 'default'; }
+        else if (hit.zone === 'left' || hit.zone === 'right') { timelineCanvas.style.cursor = 'ew-resize'; }
+        else { timelineCanvas.style.cursor = 'grab'; }
+    }
+});
+
+timelineCanvas.addEventListener('mouseup', (e) => {
+    if (tlDrag) {
+        if (!tlDrag.moved) {
+            // Was a click, not a drag — select/deselect the zoom
+            selectZoom(tlDrag.idx);
+        }
+        tlDrag = null;
+        timelineCanvas.style.cursor = 'default';
+        renderTimeline();
+        return;
+    }
+    // Click on empty area = seek
+    if (videoDuration <= 0) return;
+    const rect = timelineCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const t = (x / timelineCanvas.width) * videoDuration;
+    seekTo(t);
+});
+
+timelineCanvas.addEventListener('mouseleave', () => {
+    if (tlDrag) {
+        tlDrag = null;
+        timelineCanvas.style.cursor = 'default';
+        renderTimeline();
+    }
+});
+
+// ============================================================
+// PLAYBACK CONTROLS
+// ============================================================
+
+function togglePlay() {
+    if (video.paused) {
+        video.play();
+        if (webcamVideo.src) { webcamVideo.currentTime = video.currentTime; webcamVideo.play().catch(() => {}); }
+    } else {
+        video.pause();
+        if (webcamVideo.src) webcamVideo.pause();
+    }
+}
+
+function setSpeed(s) {
+    video.playbackRate = s;
+    if (webcamVideo.src) webcamVideo.playbackRate = s;
+    showToast(`Vitesse: ${s}x`);
+}
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); seekTo(Math.max(0, video.currentTime - 2)); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); seekTo(Math.min(videoDuration, video.currentTime + 2)); }
+});
+
+// Click preview to play/pause (only if not dragging a zoom)
+previewCanvas.addEventListener('click', (e) => {
+    if (!overlayDragState) togglePlay();
+});
+
+// ============================================================
+// ZOOM OVERLAY (drag position + resize zoom on preview)
+// ============================================================
+
+const zoomOverlay = document.getElementById('zoomOverlay');
+let overlayDragState = null; // { type: 'dot'|'rect'|'handle', idx, ... }
+
+function getOverlayRect() {
+    // The actual displayed canvas rectangle (for mouse coordinate conversion)
+    const rect = previewCanvas.getBoundingClientRect();
+    return { ox: rect.left, oy: rect.top, w: rect.width, h: rect.height };
+}
+
+function renderZoomOverlay() {
+    zoomOverlay.innerHTML = '';
+    if (!videoW || zoomEvents.length === 0) return;
+
+    // Sync overlay position/size exactly with the displayed canvas
+    const canvasRect = previewCanvas.getBoundingClientRect();
+    const containerRect = previewCanvas.parentElement.getBoundingClientRect();
+    const oLeft = canvasRect.left - containerRect.left;
+    const oTop = canvasRect.top - containerRect.top;
+    const oW = canvasRect.width;
+    const oH = canvasRect.height;
+    zoomOverlay.style.left = oLeft + 'px';
+    zoomOverlay.style.top = oTop + 'px';
+    zoomOverlay.style.width = oW + 'px';
+    zoomOverlay.style.height = oH + 'px';
+
+    const t = video.currentTime || 0;
+
+    for (let i = 0; i < zoomEvents.length; i++) {
+        const z = zoomEvents[i];
+        if (!z.enabled) continue;
+
+        const start = z.time;
+        const dur = (z.ease_in || 0.3) + (z.hold || 1.5) + (z.ease_out || 0.5);
+        // Show overlay for zooms near current time or the selected one
+        const isActive = (t >= start - 0.5 && t <= start + dur + 0.5);
+        const isSelected = (i === selectedZoomIdx);
+        if (!isActive && !isSelected) continue;
+
+        const nx = z.nx || 0.5;
+        const ny = z.ny || 0.5;
+        const zoomLevel = z.zoom || 2.0;
+
+        // Dot (center point) — pixel positions
+        const dot = document.createElement('div');
+        dot.className = 'zo-dot ' + z.type + (overlayDragState && overlayDragState.idx === i ? ' dragging' : '');
+        dot.style.left = (nx * oW) + 'px';
+        dot.style.top = (ny * oH) + 'px';
+        dot.dataset.idx = i;
+        dot.addEventListener('mousedown', (e) => startOverlayDrag(e, i, 'dot'));
+        zoomOverlay.appendChild(dot);
+
+        // Zoom rectangle (shows the zoomed-in area)
+        const rectW = 1.0 / zoomLevel;
+        const rectH = 1.0 / zoomLevel;
+        const rx = Math.max(0, Math.min(1 - rectW, nx - rectW / 2));
+        const ry = Math.max(0, Math.min(1 - rectH, ny - rectH / 2));
+
+        const rect = document.createElement('div');
+        rect.className = 'zo-rect ' + z.type + (isSelected ? ' selected' : '');
+        rect.style.left = (rx * oW) + 'px';
+        rect.style.top = (ry * oH) + 'px';
+        rect.style.width = (rectW * oW) + 'px';
+        rect.style.height = (rectH * oH) + 'px';
+        rect.dataset.idx = i;
+        rect.addEventListener('mousedown', (e) => startOverlayDrag(e, i, 'rect'));
+        zoomOverlay.appendChild(rect);
+
+        // Resize handle (bottom-right corner of rect)
+        const handle = document.createElement('div');
+        handle.className = 'zo-handle ' + z.type;
+        handle.style.left = ((rx + rectW) * oW) + 'px';
+        handle.style.top = ((ry + rectH) * oH) + 'px';
+        handle.style.transform = 'translate(-50%, -50%)';
+        handle.dataset.idx = i;
+        handle.addEventListener('mousedown', (e) => startOverlayDrag(e, i, 'handle'));
+        zoomOverlay.appendChild(handle);
+    }
+}
+
+function startOverlayDrag(e, idx, type) {
+    e.preventDefault();
+    e.stopPropagation();
+    const z = zoomEvents[idx];
+    const scale = getOverlayRect();
+    overlayDragState = {
+        type, idx,
+        startNx: z.nx || 0.5,
+        startNy: z.ny || 0.5,
+        startZoom: z.zoom || 2.0,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+    };
+    if (type === 'rect') {
+        // offset between mouse and center of zoom
+        const mx = (e.clientX - scale.ox) / scale.w;
+        const my = (e.clientY - scale.oy) / scale.h;
+        overlayDragState.offsetNx = (z.nx || 0.5) - mx;
+        overlayDragState.offsetNy = (z.ny || 0.5) - my;
+    }
+    selectedZoomIdx = idx;
+    seekTo(z.time);
+    renderZoomList();
+
+    const onMove = (ev) => {
+        const z = zoomEvents[overlayDragState.idx];
+        const scale = getOverlayRect();
+
+        if (overlayDragState.type === 'dot') {
+            z.nx = Math.max(0.02, Math.min(0.98, (ev.clientX - scale.ox) / scale.w));
+            z.ny = Math.max(0.02, Math.min(0.98, (ev.clientY - scale.oy) / scale.h));
+        } else if (overlayDragState.type === 'rect') {
+            z.nx = Math.max(0.02, Math.min(0.98, (ev.clientX - scale.ox) / scale.w + overlayDragState.offsetNx));
+            z.ny = Math.max(0.02, Math.min(0.98, (ev.clientY - scale.oy) / scale.h + overlayDragState.offsetNy));
+        } else if (overlayDragState.type === 'handle') {
+            // Drag handle = resize zoom: up/left = more zoom
+            const dy = overlayDragState.startClientY - ev.clientY;
+            const dx = ev.clientX - overlayDragState.startClientX;
+            const delta = (dy - dx) * 0.01;
+            z.zoom = Math.max(1.2, Math.min(4.0, overlayDragState.startZoom + delta));
+        }
+        renderZoomOverlay();
+        renderZoomList();
+    };
+
+    const onUp = () => {
+        overlayDragState = null;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        renderZoomOverlay();
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+}
+
+// Update overlay during playback
+setInterval(renderZoomOverlay, 200);
+
+// Webcam size slider
+document.getElementById('optWebcamSize').addEventListener('input', (e) => {
+    document.getElementById('optWebcamSizeVal').textContent = e.target.value + '%';
+});
+
+// ============================================================
+// OBS CONTROLS
+// ============================================================
+
+async function obsConnect() {
+    const host = document.getElementById('obsHost').value;
+    const port = parseInt(document.getElementById('obsPort').value);
+    const password = document.getElementById('obsPass').value;
+
+    showToast('Connexion a OBS...');
+    const res = await apiCall('POST', '/api/obs/connect', { host, port, password });
+    if (res.success) {
+        document.getElementById('obsStatusDot').classList.add('connected');
+        document.getElementById('obsStatusLabel').textContent = res.message;
+        document.getElementById('obsBadge').textContent = 'connecte';
+        document.getElementById('btnObsStart').disabled = false;
+        showToast(res.message);
+    } else {
+        showToast(`Erreur: ${res.error}`);
+    }
+}
+
+async function obsStart() {
+    const res = await apiCall('POST', '/api/obs/start', {});
+    if (res.success) {
+        document.getElementById('obsStatusDot').classList.add('recording');
+        document.getElementById('obsStatusLabel').textContent = 'Enregistrement...';
+        document.getElementById('obsBadge').textContent = 'REC';
+        document.getElementById('btnObsStart').disabled = true;
+        document.getElementById('btnObsStop').disabled = false;
+        showToast('Enregistrement lance!');
+    } else {
+        showToast(`Erreur: ${res.error}`);
+    }
+}
+
+async function obsStop() {
+    showToast('Arret en cours...');
+    document.getElementById('btnObsStop').disabled = true;
+    const res = await apiCall('POST', '/api/obs/stop', {});
+    document.getElementById('obsStatusDot').classList.remove('recording');
+    document.getElementById('obsStatusLabel').textContent = 'OBS connecte';
+    document.getElementById('obsBadge').textContent = 'connecte';
+    document.getElementById('btnObsStart').disabled = false;
+
+    // Debug: afficher les messages du serveur dans la console
+    console.log('[OBS STOP] Response:', JSON.stringify(res, null, 2));
+    if (res.messages) {
+        res.messages.forEach(m => console.log('[OBS STOP]', m));
+    }
+
+    if (res.success) {
+        const parts = [];
+        if (res.video_path) parts.push('video');
+        if (res.cursor_log_path) parts.push('cursor log');
+        if (res.webcam_file_path) parts.push('webcam');
+        showToast(`Arrete! Fichiers: ${parts.length > 0 ? parts.join(' + ') : 'aucun detecte'}`, 4000);
+
+        // --- 1. Video ecran ---
+        if (res.video_path) {
+            videoPath = res.video_path;
+            const videoName = res.video_path.split(/[\\/]/).pop();
+            document.getElementById('dzVideoName').textContent = videoName;
+            document.getElementById('dzVideo').classList.add('has-file');
+            // Charger via le serveur HTTP (le serveur connait le dossier)
+            video.src = API + '/' + encodeURIComponent(videoName);
+            video.load();
+            video.addEventListener('loadedmetadata', () => {
+                videoW = video.videoWidth;
+                videoH = video.videoHeight;
+                videoDuration = video.duration;
+                document.getElementById('dzVideoInfo').textContent =
+                    `${videoW}x${videoH}, ${videoDuration.toFixed(1)}s`;
+                setupPreview();
+            }, { once: true });
+        }
+
+        // --- 2. Cursor log ---
+        if (res.cursor_log_path) {
+            logPath = res.cursor_log_path;
+            const logName = res.cursor_log_path.split(/[\\/]/).pop();
+            document.getElementById('dzLogName').textContent = logName;
+            document.getElementById('dzLog').classList.add('has-file');
+
+            // Si le serveur a renvoyé le contenu du log, l'utiliser directement
+            if (res.cursor_log_data) {
+                const data = res.cursor_log_data;
+                cursorEvents = data.events || [];
+                const meta = data.metadata || {};
+                webcamInfo = meta.webcam || null;
+                document.getElementById('dzLogInfo').textContent =
+                    `${cursorEvents.length} events, ${(meta.duration || 0).toFixed(1)}s`;
+            }
+        }
+
+        // --- 3. Webcam / camera (auto-detecte par le serveur) ---
+        if (res.webcam_file_path) {
+            webcamPath = res.webcam_file_path;
+            const camName = res.webcam_file_path.split(/[\\/]/).pop();
+            document.getElementById('dzWebcamName').textContent = camName;
+            document.getElementById('dzWebcam').classList.add('has-file');
+            webcamVideo.src = API + '/' + encodeURIComponent(camName);
+            webcamVideo.load();
+            document.getElementById('optWebcam').checked = true;
+            document.getElementById('dzWebcamInfo').textContent = 'Auto-detecte';
+        }
+
+        updateFilesBadge();
+
+        // --- 4. Auto-analyse des zooms ---
+        if (cursorEvents.length > 0) {
+            setTimeout(() => {
+                analyzeLocal();
+                showToast(`Pret! ${zoomEvents.length} zooms detectes`);
+            }, 800);
+        } else if (videoPath && logPath) {
+            setTimeout(() => analyzeFiles(), 800);
+        }
+    }
+}
+
+// ============================================================
+// TRANSCRIPTION
+// ============================================================
+
+async function startTranscribe() {
+    if (!videoPath) {
+        showToast('Charge une video d\'abord');
+        return;
+    }
+    const model = document.getElementById('optCaptionModel').value;
+    document.getElementById('transcribeStatus').textContent = 'Transcription...';
+
+    const res = await apiCall('POST', '/api/transcribe', {
+        video_path: videoPath,
+        model: model,
+    });
+
+    if (res.success) {
+        showToast('Transcription lancee...');
+        pollTranscribe();
+    } else {
+        showToast(`Erreur: ${res.error}`);
+        document.getElementById('transcribeStatus').textContent = 'Erreur';
+    }
+}
+
+async function pollTranscribe() {
+    const res = await apiCall('GET', '/api/transcribe/status');
+    if (res.state === 'running') {
+        setTimeout(pollTranscribe, 2000);
+    } else if (res.state === 'done') {
+        captionSegments = res.segments;
+        document.getElementById('transcribeStatus').textContent = `${captionSegments.length} segments`;
+        document.getElementById('optCaptions').checked = true;
+        showToast(`Transcription: ${captionSegments.length} segments`);
+    } else if (res.state === 'error') {
+        document.getElementById('transcribeStatus').textContent = 'Erreur';
+        showToast(`Erreur transcription: ${res.error}`);
+    }
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+
+async function startRender() {
+    if (!analysisReady) {
+        showToast('Analyse les fichiers d\'abord');
+        return;
+    }
+
+    const activeZooms = zoomEvents.filter(z => z.enabled).map(z => ({
+        time: z.time, nx: z.nx, ny: z.ny, zoom: z.zoom,
+        hold: z.hold, ease_in: z.ease_in, ease_out: z.ease_out, type: z.type,
+    }));
+
+    const config = {
+        video_path: videoPath,
+        zoom_events: activeZooms,
+        fps: videoFps || 30,
+    };
+
+    // Background
+    if (document.getElementById('optBg').checked) {
+        config.background = { style: document.getElementById('optBgStyle').value };
+    }
+
+    // Captions
+    if (document.getElementById('optCaptions').checked && captionSegments.length > 0) {
+        config.captions = {
+            style: document.getElementById('optCaptionStyle').value,
+            segments: captionSegments,
+        };
+    }
+
+    // Webcam
+    if (document.getElementById('optWebcam').checked) {
+        const sizePct = parseInt(document.getElementById('optWebcamSize').value) / 100;
+        const shape = document.getElementById('optWebcamShape').value;
+        const pos = document.getElementById('optWebcamPos').value;
+        const camAspect = webcamVideo.videoWidth > 0
+            ? webcamVideo.videoWidth / webcamVideo.videoHeight
+            : (webcamInfo ? webcamInfo.nw / webcamInfo.nh : 16/9);
+        const out_nh = sizePct / camAspect;
+        const margin = 0.02;
+
+        let out_nx, out_ny;
+        if (pos === 'top-left') { out_nx = margin; out_ny = margin; }
+        else if (pos === 'top-right') { out_nx = 1 - sizePct - margin; out_ny = margin; }
+        else if (pos === 'bottom-right') { out_nx = 1 - sizePct - margin; out_ny = 1 - out_nh - margin; }
+        else { out_nx = margin; out_ny = 1 - out_nh - margin; }
+
+        config.webcam = {
+            out_nx, out_ny, out_nw: sizePct, out_nh,
+            shape, border: 3, border_color: [255, 255, 255],
+        };
+        if (webcamPath) config.webcam_file = webcamPath;
+    }
+
+    // Show modal
+    document.getElementById('renderModal').classList.add('show');
+    document.getElementById('renderModalTitle').textContent = 'Render en cours...';
+    document.getElementById('renderProgressFill').style.width = '0%';
+    document.getElementById('renderProgressText').textContent = 'Preparation...';
+    document.getElementById('renderModalClose').style.display = 'none';
+
+    const res = await apiCall('POST', '/api/render', config);
+    if (res.success) {
+        pollRender();
+    } else {
+        document.getElementById('renderModalTitle').textContent = 'Erreur';
+        document.getElementById('renderProgressText').textContent = res.error;
+        document.getElementById('renderModalClose').style.display = 'inline-flex';
+    }
+}
+
+async function pollRender() {
+    const res = await apiCall('GET', '/api/render/status');
+    const pct = res.total_frames > 0 ? (res.frames_done / res.total_frames * 100) : 0;
+
+    document.getElementById('renderProgressFill').style.width = pct + '%';
+    document.getElementById('renderProgressText').textContent =
+        `${res.frames_done} / ${res.total_frames} frames (${pct.toFixed(0)}%)`;
+
+    if (res.state === 'running') {
+        setTimeout(pollRender, 1000);
+    } else if (res.state === 'done') {
+        document.getElementById('renderModalTitle').textContent = 'Render termine!';
+        document.getElementById('renderProgressFill').style.width = '100%';
+        document.getElementById('renderProgressText').textContent = `Sortie: ${res.output_path}`;
+        document.getElementById('renderModalClose').style.display = 'inline-flex';
+        showToast('Render termine!');
+    } else if (res.state === 'error') {
+        document.getElementById('renderModalTitle').textContent = 'Erreur render';
+        document.getElementById('renderProgressText').textContent = res.error;
+        document.getElementById('renderModalClose').style.display = 'inline-flex';
+    }
+}
+
+function closeRenderModal() {
+    document.getElementById('renderModal').classList.remove('show');
+}
+
+// ============================================================
+// WINDOW RESIZE
+// ============================================================
+
+window.addEventListener('resize', () => {
+    if (timelineCanvas.parentElement) {
+        timelineCanvas.width = timelineCanvas.parentElement.clientWidth;
+        renderTimeline();
+    }
+});
+
+// ============================================================
+// INIT
+// ============================================================
+
+// Check OBS status on load
+(async () => {
+    try {
+        const res = await apiCall('GET', '/api/obs/status');
+        if (res.connected) {
+            document.getElementById('obsStatusDot').classList.add('connected');
+            document.getElementById('obsStatusLabel').textContent = 'OBS connecte';
+            document.getElementById('obsBadge').textContent = 'connecte';
+            document.getElementById('btnObsStart').disabled = false;
+        }
+    } catch (e) {
+        // Server not running (opened standalone)
+    }
+})();
+
+</script>
+</body>
+</html>
