@@ -78,7 +78,7 @@
         <div class="p-1">
           {#each $zoomEvents as z, i}
             {@const selected = i === $selectedZoomIdx}
-            {@const typeCls = z.type === 'click' ? 'text-accent bg-accent/10' : z.type === 'arrive' ? 'text-blue bg-blue/10' : z.type === 'still' ? 'text-yellow bg-yellow/10' : 'text-txt3 bg-bg4'}
+            {@const typeCls = z.type === 'click' ? 'text-accent bg-accent/10' : z.type === 'arrive' ? 'text-blue bg-blue/10' : z.type === 'still' ? 'text-yellow bg-yellow/10' : z.type === 'manual' ? 'text-green bg-green/10' : 'text-txt3 bg-bg4'}
             <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer text-[11px] transition-all duration-100 hover:bg-bg4"
                  class:selected
                  class:disabled={!z.enabled}

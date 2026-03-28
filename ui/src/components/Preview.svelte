@@ -299,7 +299,17 @@
   <video bind:this={videoEl} muted class="hidden"></video>
   <video bind:this={webcamEl} muted class="hidden"></video>
   <canvas bind:this={previewCanvas} class="max-w-full max-h-full cursor-pointer"
-    on:click={() => { if (!overlayDragState) togglePlay(); }}></canvas>
+    on:click={() => { if (!overlayDragState) togglePlay(); }}
+    on:dblclick={(e) => {
+      if ($selectedZoomIdx < 0 || !$zoomEvents[$selectedZoomIdx]) return;
+      const rect = previewCanvas.getBoundingClientRect();
+      const nx = Math.max(0.02, Math.min(0.98, (e.clientX - rect.left) / rect.width));
+      const ny = Math.max(0.02, Math.min(0.98, (e.clientY - rect.top) / rect.height));
+      $zoomEvents[$selectedZoomIdx].nx = nx;
+      $zoomEvents[$selectedZoomIdx].ny = ny;
+      $zoomEvents = $zoomEvents;
+      e.preventDefault();
+    }}></canvas>
   <div bind:this={zoomOverlayEl} class="absolute pointer-events-none z-[2]"></div>
   {#if !$videoW}
     <div class="absolute flex flex-col items-center gap-3 text-txt3">

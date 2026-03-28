@@ -41,7 +41,7 @@
     }
 
     // Zoom events
-    const colors = { click: [139,92,246], arrive: [59,130,246], still: [234,179,8] };
+    const colors = { click: [139,92,246], arrive: [59,130,246], still: [234,179,8], manual: [34,197,94] };
     for (let i = 0; i < $zoomEvents.length; i++) {
       const z = $zoomEvents[i];
       if (!z.enabled) continue;
@@ -144,6 +144,27 @@
     }
   }
 
+  function onDblClick(e) {
+    if ($videoDuration <= 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    // Don't create if double-clicking on an existing zoom
+    const hit = hitTest(px, e.clientY - rect.top);
+    if (hit) return;
+    // Create manual zoom at click position
+    const time = Math.round((px / canvas.width) * $videoDuration * 100) / 100;
+    const newZoom = {
+      time, nx: 0.5, ny: 0.5, zoom: 2.0,
+      hold: 1.5, ease_in: 0.3, ease_out: 0.5,
+      type: 'manual', enabled: true,
+    };
+    $zoomEvents = [...$zoomEvents, newZoom].sort((a, b) => a.time - b.time);
+    // Select the newly created zoom
+    const newIdx = $zoomEvents.findIndex(z => z === newZoom);
+    $selectedZoomIdx = newIdx;
+    seekTo(time);
+  }
+
   function onMouseMove(e) {
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
@@ -205,5 +226,6 @@
 <div class="h-[100px] bg-bg2 border-t border-border relative shrink-0">
   <canvas bind:this={canvas} class="w-full h-full cursor-crosshair"
     on:mousedown={onMouseDown} on:mousemove={onMouseMove} on:mouseup={onMouseUp}
+    on:dblclick={onDblClick}
     on:mouseleave={() => { if (tlDrag) { tlDrag = null; dragOutIdx = -1; dragOutOpacity = 1; canvas.style.cursor = 'default'; } }}>
 </div>
