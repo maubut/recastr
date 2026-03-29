@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { videoW, videoH, videoDuration, zoomEvents, cursorEvents, webcamInfo, selectedZoomIdx, options } from '../lib/store.js';
-  import { setVideoEl, setWebcamEl, getZoomState, seekTo, togglePlay } from '../lib/actions.js';
+  import { videoW, videoH, videoDuration, zoomEvents, cursorEvents, webcamInfo, selectedZoomIdx, options, layoutEvents } from '../lib/store.js';
+  import { setVideoEl, setWebcamEl, getZoomState, getLayoutState, seekTo, togglePlay } from '../lib/actions.js';
 
   let previewCanvas;
   let ctx;
@@ -12,8 +12,18 @@
   let overlayDragState = null;
   let overlayInterval;
 
+  // Temporal motion blur: accumulation buffer
+  // Each frame, we blend the current video frame with the previous accumulated result.
+  // This creates a natural trail that follows exact camera movement direction.
+  let accumCanvas = null;
+  let accumCtx = null;
+  let prevSpeed = 0; // track speed for smooth ramp
+
   onMount(() => {
     ctx = previewCanvas.getContext('2d');
+    // High-quality image interpolation for smooth zooms
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     setVideoEl(videoEl);
     setWebcamEl(webcamEl);
     animFrame = requestAnimationFrame(draw);
@@ -38,8 +48,17 @@
     // Canvas is larger when background/padding is enabled
     const pad = $options.bg ? $options.padding / 100 : 0;
     const scale = 1 / (1 - 2 * pad);
-    previewCanvas.width = Math.round($videoW * scale);
-    previewCanvas.height = Math.round($videoH * scale);
+    const targetW = Math.round($videoW * scale);
+    const targetH = Math.round($videoH * scale);
+    // Only resize if dimensions changed (resizing clears the canvas!)
+    if (previewCanvas.width !== targetW || previewCanvas.height !== targetH) {
+      previewCanvas.width = targetW;
+      previewCanvas.height = targetH;
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+      }
+    }
   }
 
   function drawBackground(cw, ch) {
@@ -80,25 +99,43 @@
 
     const t = videoEl.currentTime;
     const state = getZoomState(t);
-    const vw = $videoW, vh = $videoH;
+    const vw = $videoW || videoEl.videoWidth;
+    const vh = $videoH || videoEl.videoHeight;
     const cw = previewCanvas.width, ch = previewCanvas.height;
+
+    // Clear canvas each frame
+    ctx.clearRect(0, 0, cw, ch);
 
     const hasBg = $options.bg;
     const pad = hasBg ? $options.padding / 100 : 0;
     const radius = hasBg ? $options.borderRadius : 0;
+    const hasLayoutEvents = $layoutEvents.length > 0;
+    const layout = hasLayoutEvents ? getLayoutState(t) : null;
 
-    // Video inset area
-    const vx = Math.round(pad * cw);
-    const vy = Math.round(pad * ch);
-    const vWidth = cw - 2 * vx;
-    const vHeight = ch - 2 * vy;
+    // Video inset area (static padding or layout-driven)
+    let vx, vy, vWidth, vHeight;
+    if (layout && layout.screenW > 0) {
+      vx = layout.screenX * cw;
+      vy = layout.screenY * ch;
+      vWidth = layout.screenW * cw;
+      vHeight = vWidth / (vw / vh); // maintain aspect ratio
+      if (vy + vHeight > ch) vHeight = ch - vy;
+    } else if (layout && layout.screenW === 0) {
+      // Screen hidden (cam-only mode)
+      vx = 0; vy = 0; vWidth = 0; vHeight = 0;
+    } else {
+      vx = pad * cw;
+      vy = pad * ch;
+      vWidth = cw - 2 * vx;
+      vHeight = ch - 2 * vy;
+    }
 
-    if (hasBg) {
+    if (hasBg || hasLayoutEvents) {
       // Draw background
       drawBackground(cw, ch);
 
       // Inset shadow behind the video
-      if ($options.insetShadow && pad > 0) {
+      if ($options.insetShadow && vWidth > 0 && vHeight > 0) {
         ctx.save();
         ctx.shadowColor = 'rgba(0,0,0,0.5)';
         ctx.shadowBlur = 30;
@@ -112,34 +149,89 @@
       }
 
       // Clip to rounded rect for video
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(vx, vy, vWidth, vHeight, radius);
-      ctx.clip();
+      if (vWidth > 0 && vHeight > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(vx, vy, vWidth, vHeight, radius);
+        ctx.clip();
+      }
     }
 
-    // Draw video (zoomed or not) into the inset area
-    if (state.zoom > 1.02) {
-      const srcW = vw / state.zoom;
-      const srcH = vh / state.zoom;
-      const cx = state.cx * vw;
-      const cy = state.cy * vh;
-      const x1 = Math.max(0, Math.min(cx - srcW / 2, vw - srcW));
-      const y1 = Math.max(0, Math.min(cy - srcH / 2, vh - srcH));
-      ctx.drawImage(videoEl, x1, y1, srcW, srcH, vx, vy, vWidth, vHeight);
-    } else {
-      ctx.drawImage(videoEl, 0, 0, vw, vh, vx, vy, vWidth, vHeight);
+    // Draw video (zoomed or not) into the inset area — with temporal motion blur
+    if (vWidth > 0 && vHeight > 0) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      const speed = state.speed || 0;
+      // Smooth speed ramp (avoid flicker)
+      prevSpeed += (speed - prevSpeed) * 0.3;
+
+      // Temporal motion blur: blend current frame with accumulated previous frames
+      // trailAlpha = how much of the previous frame to retain (0 = none, 0.6 = strong trail)
+      const useBlur = prevSpeed > 0.3;
+      // Scale trail strength with camera speed, capped for taste
+      const trailAlpha = useBlur ? Math.min(0.55, prevSpeed / 18.0) : 0;
+
+      // Ensure accumulation buffer matches video inset size
+      const bw = Math.round(vWidth);
+      const bh = Math.round(vHeight);
+      if (!accumCanvas || accumCanvas.width !== bw || accumCanvas.height !== bh) {
+        accumCanvas = document.createElement('canvas');
+        accumCanvas.width = bw;
+        accumCanvas.height = bh;
+        accumCtx = accumCanvas.getContext('2d');
+        accumCtx.imageSmoothingEnabled = true;
+        accumCtx.imageSmoothingQuality = 'high';
+      }
+
+      // Draw current video frame to accum buffer
+      if (trailAlpha > 0.01) {
+        // Temporal blend: keep trailAlpha of previous, draw (1-trailAlpha) of current on top
+        // The previous frame already contains history → exponential decay trail
+        accumCtx.globalAlpha = trailAlpha;
+        accumCtx.drawImage(accumCanvas, 0, 0); // re-draw previous (faded)
+        accumCtx.globalAlpha = 1.0;
+      }
+
+      // Draw the sharp current frame into the accum buffer
+      if (trailAlpha > 0.01) {
+        // Partially transparent current frame over the trail
+        accumCtx.globalCompositeOperation = 'source-over';
+        accumCtx.globalAlpha = 1.0 - trailAlpha * 0.6;
+      } else {
+        accumCtx.globalAlpha = 1.0;
+      }
+
+      if (state.zoom > 1.02) {
+        const srcW = vw / state.zoom;
+        const srcH = vh / state.zoom;
+        const cx = state.cx * vw;
+        const cy = state.cy * vh;
+        const x1 = Math.max(0, Math.min(cx - srcW / 2, vw - srcW));
+        const y1 = Math.max(0, Math.min(cy - srcH / 2, vh - srcH));
+        accumCtx.drawImage(videoEl, x1, y1, srcW, srcH, 0, 0, bw, bh);
+      } else {
+        accumCtx.drawImage(videoEl, 0, 0, vw, vh, 0, 0, bw, bh);
+      }
+      accumCtx.globalAlpha = 1.0;
+
+      // Draw the accumulated (motion-blurred) result to the main canvas
+      ctx.drawImage(accumCanvas, 0, 0, bw, bh, vx, vy, vWidth, vHeight);
     }
 
-    if (hasBg) {
-      ctx.restore();
+    if (hasBg || hasLayoutEvents) {
+      if (vWidth > 0 && vHeight > 0) ctx.restore();
     }
 
-    // Webcam overlay (drawn relative to inset area)
-    if ($options.webcam && webcamEl?.src && webcamEl.videoWidth > 0) {
-      drawWebcam(webcamEl, 0, 0, webcamEl.videoWidth, webcamEl.videoHeight);
-    } else if ($options.webcam && $webcamInfo?.nx !== undefined) {
-      drawWebcam(videoEl, $webcamInfo.nx * vw, $webcamInfo.ny * vh, $webcamInfo.nw * vw, $webcamInfo.nh * vh);
+    // Webcam overlay — layout-driven or static
+    if ($options.webcam || hasLayoutEvents) {
+      const hasCam = webcamEl?.src && webcamEl.videoWidth > 0;
+      const hasLegacyCam = $webcamInfo?.nx !== undefined;
+      if (hasCam) {
+        drawWebcam(webcamEl, 0, 0, webcamEl.videoWidth, webcamEl.videoHeight, layout);
+      } else if (hasLegacyCam) {
+        drawWebcam(videoEl, $webcamInfo.nx * vw, $webcamInfo.ny * vh, $webcamInfo.nw * vw, $webcamInfo.nh * vh, layout);
+      }
     }
 
     // Click highlight
@@ -216,21 +308,31 @@
     }
   }
 
-  function drawWebcam(src, srcX, srcY, srcW, srcH) {
+  function drawWebcam(src, srcX, srcY, srcW, srcH, layout) {
     const shape = $options.webcamShape;
-    const pos = $options.webcamPos;
-    const sizePct = $options.webcamSize / 100;
-    // Position webcam relative to the full canvas (including padding)
     const cw = previewCanvas.width, ch = previewCanvas.height;
     const camAspect = srcW / Math.max(srcH, 1);
-    const dstW = cw * sizePct;
-    const dstH = dstW / camAspect;
-    const margin = cw * 0.02;
-    let dstX, dstY;
-    if (pos === 'top-left') { dstX = margin; dstY = margin; }
-    else if (pos === 'top-right') { dstX = cw - dstW - margin; dstY = margin; }
-    else if (pos === 'bottom-right') { dstX = cw - dstW - margin; dstY = ch - dstH - margin; }
-    else { dstX = margin; dstY = ch - dstH - margin; }
+    let dstX, dstY, dstW, dstH;
+
+    if (layout) {
+      // Layout-driven positioning
+      dstX = Math.round(layout.camX * cw);
+      dstY = Math.round(layout.camY * ch);
+      dstW = Math.round(layout.camW * cw);
+      dstH = Math.round(layout.camH * ch);
+    } else {
+      // Static positioning from options
+      const pos = $options.webcamPos;
+      const sizePct = $options.webcamSize / 100;
+      dstW = cw * sizePct;
+      dstH = dstW / camAspect;
+      const margin = cw * 0.02;
+      if (pos === 'top-left') { dstX = margin; dstY = margin; }
+      else if (pos === 'top-right') { dstX = cw - dstW - margin; dstY = margin; }
+      else if (pos === 'bottom-right') { dstX = cw - dstW - margin; dstY = ch - dstH - margin; }
+      else { dstX = margin; dstY = ch - dstH - margin; }
+    }
+    if (dstW <= 0 || dstH <= 0) return;
 
     ctx.save();
     if (shape === 'circle') {
@@ -387,8 +489,8 @@
 </script>
 
 <div class="flex-1 flex items-center justify-center bg-bg relative min-h-[300px]">
-  <video bind:this={videoEl} muted class="hidden"></video>
-  <video bind:this={webcamEl} muted class="hidden"></video>
+  <video bind:this={videoEl} muted style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
+  <video bind:this={webcamEl} muted style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
   <canvas bind:this={previewCanvas} class="max-w-full max-h-full cursor-pointer"
     on:click={() => { if (!overlayDragState) togglePlay(); }}
     on:dblclick={(e) => {

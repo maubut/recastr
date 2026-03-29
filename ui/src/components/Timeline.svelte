@@ -1,8 +1,13 @@
 <script>
   import { onMount } from 'svelte';
-  import { zoomEvents, videoDuration, selectedZoomIdx, fmt } from '../lib/store.js';
+  import { zoomEvents, videoDuration, selectedZoomIdx, cursorEvents, layoutEvents, selectedLayoutIdx, LAYOUT_PRESETS, fmt } from '../lib/store.js';
   import { seekTo } from '../lib/actions.js';
   import { getVideoEl } from '../lib/actions.js';
+
+  const LAYOUT_ROW_Y = 80; // y position for layout event row
+  const LAYOUT_ROW_H = 16;
+  const LAYOUT_COLORS = { intro: '#f59e0b', demo: '#3b82f6', split: '#10b981', 'cam-only': '#ec4899' };
+  const LAYOUT_LABELS = { intro: 'Intro', demo: 'Demo', split: 'Split', 'cam-only': 'Cam' };
 
   let canvas;
   let ctx;
@@ -19,8 +24,11 @@
     renderTimeline();
   });
 
-  $: if (ctx && $zoomEvents) renderTimeline();
+  $: if (ctx && $zoomEvents) { syncCanvasSize(); renderTimeline(); }
   $: if (ctx && $selectedZoomIdx !== undefined) renderTimeline();
+  $: if (ctx && $layoutEvents) { syncCanvasSize(); renderTimeline(); }
+  $: if (ctx && $selectedLayoutIdx !== undefined) renderTimeline();
+  $: if (ctx && $videoDuration > 0) { syncCanvasSize(); renderTimeline(); }
 
   function renderTimeline() {
     if (!ctx) return;
@@ -93,6 +101,50 @@
       }
     }
 
+    // Layout events row
+    if ($layoutEvents.length > 0) {
+      // Row background
+      ctx.fillStyle = 'rgba(255,255,255,0.02)';
+      ctx.fillRect(0, LAYOUT_ROW_Y, w, LAYOUT_ROW_H);
+      // Label
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '8px monospace';
+      ctx.fillText('LAYOUT', 4, LAYOUT_ROW_Y + 11);
+
+      for (let i = 0; i < $layoutEvents.length; i++) {
+        const le = $layoutEvents[i];
+        const x = (le.time / $videoDuration) * w;
+        const nextTime = $layoutEvents[i + 1]?.time ?? $videoDuration;
+        const x2 = (nextTime / $videoDuration) * w;
+        const color = LAYOUT_COLORS[le.preset] || '#8b5cf6';
+        const isSel = (i === $selectedLayoutIdx);
+
+        // Bar spanning until next keyframe
+        ctx.fillStyle = color + (isSel ? '30' : '18');
+        ctx.beginPath(); ctx.roundRect(x, LAYOUT_ROW_Y + 1, Math.max(x2 - x, 4), LAYOUT_ROW_H - 2, 2); ctx.fill();
+
+        // Diamond marker at keyframe time
+        ctx.fillStyle = color;
+        const dy = LAYOUT_ROW_Y + LAYOUT_ROW_H / 2;
+        ctx.beginPath();
+        ctx.moveTo(x, dy - 5); ctx.lineTo(x + 5, dy); ctx.lineTo(x, dy + 5); ctx.lineTo(x - 5, dy); ctx.closePath();
+        ctx.fill();
+        if (isSel) {
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x, dy - 5); ctx.lineTo(x + 5, dy); ctx.lineTo(x, dy + 5); ctx.lineTo(x - 5, dy); ctx.closePath();
+          ctx.stroke();
+        }
+
+        // Label
+        if (x2 - x > 30) {
+          ctx.fillStyle = 'rgba(255,255,255,0.5)';
+          ctx.font = '8px monospace';
+          ctx.fillText(LAYOUT_LABELS[le.preset] || le.preset, x + 8, LAYOUT_ROW_Y + 11);
+        }
+      }
+    }
+
     // Playhead
     const vid = getVideoEl();
     if (vid) {
@@ -120,7 +172,7 @@
       const dur = (z.ease_in || 0.3) + (z.hold || 1.5) + (z.ease_out || 0.5);
       const x1 = (z.time / $videoDuration) * w;
       const x2 = ((z.time + dur) / $videoDuration) * w;
-      if (px >= x1-2 && px <= x2+2 && py >= 18 && py <= canvas.height-18) {
+      if (px >= x1-2 && px <= x2+2 && py >= 18 && py <= LAYOUT_ROW_Y) {
         if (px <= x1 + EDGE_PX) return { idx: i, zone: 'left' };
         if (px >= x2 - EDGE_PX) return { idx: i, zone: 'right' };
         return { idx: i, zone: 'body' };
@@ -129,17 +181,67 @@
     return null;
   }
 
+  function layoutHitTest(px, py) {
+    if (py < LAYOUT_ROW_Y || py > LAYOUT_ROW_Y + LAYOUT_ROW_H) return null;
+    const w = canvas.width;
+    for (let i = $layoutEvents.length - 1; i >= 0; i--) {
+      const le = $layoutEvents[i];
+      const x = (le.time / $videoDuration) * w;
+      if (px >= x - 8 && px <= x + 8) return { idx: i };
+    }
+    return null;
+  }
+
+  // Scrub drag state: click+drag on empty area = scrub
+  let scrubDrag = null; // { wasPlaying: bool }
+
+  // Sync internal canvas resolution with displayed size (prevents seek offset bugs)
+  function syncCanvasSize() {
+    const w = canvas.parentElement?.clientWidth || canvas.clientWidth;
+    if (w > 0 && canvas.width !== w) {
+      canvas.width = w;
+      canvas.height = 100;
+      renderTimeline();
+    }
+  }
+
   function onMouseDown(e) {
     if ($videoDuration <= 0) return;
+    syncCanvasSize(); // ensure canvas.width matches display before computing positions
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    // Use display width (rect.width) for time calculation — always accurate
+    const w = rect.width;
     const hit = hitTest(px, py);
+    // Check layout events first
+    const layoutHit = layoutHitTest(px, py);
+    if (layoutHit) {
+      $selectedLayoutIdx = layoutHit.idx;
+      $selectedZoomIdx = -1;
+      tlDrag = { type: 'layout-move', idx: layoutHit.idx, startX: px, startTime: $layoutEvents[layoutHit.idx].time, moved: false };
+      seekTo($layoutEvents[layoutHit.idx].time);
+      e.preventDefault();
+      return;
+    }
+
     if (hit) {
       const z = $zoomEvents[hit.idx];
       if (hit.zone === 'body') tlDrag = { type: 'move', idx: hit.idx, startX: px, startTime: z.time, moved: false };
       else if (hit.zone === 'left') tlDrag = { type: 'resize-left', idx: hit.idx, startX: px, startTime: z.time, startEaseIn: z.ease_in || 0.3, moved: false };
       else tlDrag = { type: 'resize-right', idx: hit.idx, startX: px, startHold: z.hold || 1.5, moved: false };
       $selectedZoomIdx = hit.idx;
+      $selectedLayoutIdx = -1;
+      e.preventDefault();
+    } else {
+      // Click on empty area: start scrub drag
+      const vid = getVideoEl();
+      const wasPlaying = vid ? !vid.paused : false;
+      if (vid && wasPlaying) vid.pause();
+      scrubDrag = { wasPlaying };
+      const clickTime = Math.max(0, Math.min($videoDuration, (px / w) * $videoDuration));
+      seekTo(clickTime);
+      $selectedZoomIdx = -1;
+      $selectedLayoutIdx = -1;
       e.preventDefault();
     }
   }
@@ -148,13 +250,41 @@
     if ($videoDuration <= 0) return;
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const w = rect.width;
+
+    // Double-click in layout row → add layout keyframe
+    if (py >= LAYOUT_ROW_Y && py <= LAYOUT_ROW_Y + LAYOUT_ROW_H) {
+      const layoutHit = layoutHitTest(px, py);
+      if (layoutHit) return; // don't create on top of existing
+      const time = Math.round((px / w) * $videoDuration * 100) / 100;
+      const newLayout = { time, preset: 'demo', transition: 0.8, ...LAYOUT_PRESETS['demo'] };
+      $layoutEvents = [...$layoutEvents, newLayout].sort((a, b) => a.time - b.time);
+      const newIdx = $layoutEvents.findIndex(l => l === newLayout);
+      $selectedLayoutIdx = newIdx;
+      $selectedZoomIdx = -1;
+      seekTo(time);
+      return;
+    }
+
     // Don't create if double-clicking on an existing zoom
-    const hit = hitTest(px, e.clientY - rect.top);
+    const hit = hitTest(px, py);
     if (hit) return;
     // Create manual zoom at click position
-    const time = Math.round((px / canvas.width) * $videoDuration * 100) / 100;
+    const time = Math.round((px / w) * $videoDuration * 100) / 100;
+    // Find cursor position at this time (if cursor log is loaded)
+    let nx = 0.5, ny = 0.5;
+    if ($cursorEvents.length > 0) {
+      let lo = 0, hi = $cursorEvents.length - 1;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ($cursorEvents[mid].t <= time) lo = mid; else hi = mid - 1; }
+      const ev = $cursorEvents[lo];
+      if (ev && Math.abs(ev.t - time) < 2.0) {
+        nx = ev.nx || 0.5;
+        ny = ev.ny || 0.5;
+      }
+    }
     const newZoom = {
-      time, nx: 0.5, ny: 0.5, zoom: 2.0,
+      time, nx, ny, zoom: 2.0,
       hold: 1.5, ease_in: 0.3, ease_out: 0.5,
       type: 'manual', enabled: true,
     };
@@ -168,9 +298,18 @@
   function onMouseMove(e) {
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    const w = rect.width; // use display width for accurate time mapping
+
+    // Scrub drag: click+drag on empty area scrubs through video
+    if (scrubDrag) {
+      const scrubTime = Math.max(0, Math.min($videoDuration, (px / w) * $videoDuration));
+      seekTo(scrubTime);
+      return;
+    }
+
     if (tlDrag) {
       const dx = px - tlDrag.startX;
-      const dt = (dx / canvas.width) * $videoDuration;
+      const dt = (dx / w) * $videoDuration;
       const z = $zoomEvents[tlDrag.idx];
       tlDrag.moved = true;
 
@@ -184,17 +323,34 @@
         dragOutOpacity = 1;
       }
 
-      if (tlDrag.type === 'move') { z.time = Math.max(0, Math.min($videoDuration-1, Math.round((tlDrag.startTime+dt)*100)/100)); seekTo(z.time); }
+      if (tlDrag.type === 'layout-move') {
+        const le = $layoutEvents[tlDrag.idx];
+        le.time = Math.max(0, Math.min($videoDuration - 0.1, Math.round((tlDrag.startTime + dt) * 100) / 100));
+        $layoutEvents = $layoutEvents;
+        seekTo(le.time);
+      } else if (tlDrag.type === 'move') { z.time = Math.max(0, Math.min($videoDuration-1, Math.round((tlDrag.startTime+dt)*100)/100)); seekTo(z.time); }
       else if (tlDrag.type === 'resize-left') { const nt = Math.max(0, tlDrag.startTime+dt); z.time = Math.round(nt*100)/100; z.ease_in = Math.max(0.1, Math.round((tlDrag.startEaseIn-(nt-tlDrag.startTime))*100)/100); seekTo(nt); }
       else { z.hold = Math.max(0.3, Math.round((tlDrag.startHold+dt)*100)/100); }
-      $zoomEvents = $zoomEvents;
+      if (tlDrag.type !== 'layout-move') $zoomEvents = $zoomEvents;
     } else {
+      // No drag: just update cursor style
       const hit = hitTest(px, py);
-      canvas.style.cursor = !hit ? 'default' : (hit.zone === 'body' ? 'grab' : 'ew-resize');
+      const layoutHit = layoutHitTest(px, py);
+      canvas.style.cursor = layoutHit ? 'grab' : (!hit ? 'default' : (hit.zone === 'body' ? 'grab' : 'ew-resize'));
     }
   }
 
   function onMouseUp(e) {
+    // End scrub drag: restore playback if was playing
+    if (scrubDrag) {
+      if (scrubDrag.wasPlaying) {
+        const vid = getVideoEl();
+        if (vid) vid.play().catch(() => {});
+      }
+      scrubDrag = null;
+      return;
+    }
+
     if (tlDrag) {
       const rect = canvas.getBoundingClientRect();
       const py = e.clientY - rect.top;
@@ -205,7 +361,7 @@
         $zoomEvents = $zoomEvents.filter((_, i) => i !== tlDrag.idx);
         $selectedZoomIdx = -1;
       } else if (!tlDrag.moved) {
-        // Click without drag: select (but don't deselect if already selected)
+        // Click without drag on zoom event: select and seek
         $selectedZoomIdx = tlDrag.idx;
         seekTo($zoomEvents[tlDrag.idx].time);
       }
@@ -215,9 +371,6 @@
       tlDrag = null; canvas.style.cursor = 'default';
       return;
     }
-    if ($videoDuration <= 0) return;
-    const rect = canvas.getBoundingClientRect();
-    seekTo((e.clientX - rect.left) / canvas.width * $videoDuration);
   }
 </script>
 
@@ -227,5 +380,11 @@
   <canvas bind:this={canvas} class="w-full h-full cursor-crosshair"
     on:mousedown={onMouseDown} on:mousemove={onMouseMove} on:mouseup={onMouseUp}
     on:dblclick={onDblClick}
-    on:mouseleave={() => { if (tlDrag) { tlDrag = null; dragOutIdx = -1; dragOutOpacity = 1; canvas.style.cursor = 'default'; } }}>
+    on:mouseleave={() => {
+      if (tlDrag) { tlDrag = null; dragOutIdx = -1; dragOutOpacity = 1; canvas.style.cursor = 'default'; }
+      if (scrubDrag) {
+        if (scrubDrag.wasPlaying) { const vid = getVideoEl(); if (vid) vid.play().catch(() => {}); }
+        scrubDrag = null;
+      }
+    }}></canvas>
 </div>

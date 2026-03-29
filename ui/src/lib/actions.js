@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { videoW, videoH, videoDuration, videoFps, zoomEvents, cursorEvents, webcamInfo, captionSegments, analysisReady, selectedZoomIdx, obsStatus, options, apiCall, showToast, fmt, videoPath, webcamPath, logPath } from './store.js';
+import { videoW, videoH, videoDuration, videoFps, zoomEvents, cursorEvents, webcamInfo, captionSegments, analysisReady, selectedZoomIdx, obsStatus, options, apiCall, showToast, fmt, videoPath, webcamPath, logPath, layoutEvents, LAYOUT_PRESETS } from './store.js';
 
 // --- Video/Webcam elements (bound from Preview component) ---
 let videoEl = null;
@@ -47,37 +47,66 @@ export function analyzeLocal() {
   let zooms = [];
   const maxTime = events[events.length - 1].t - 3.0;
 
-  // ── STRATEGIE 1: Clics + clusters ──
+  // ── STRATEGIE 1: Clics + clusters (with release-aware hold duration) ──
+  // Build click-release pairs: each click (mousedown) matched with its next release (mouseup)
+  const clickPairs = [];
   const clicks = events.filter(e => e.click && e.t < maxTime && e.in === true);
+  for (const clickEv of clicks) {
+    // Find the next release event after this click
+    let releaseTime = clickEv.t + 0.15; // default: quick click (150ms)
+    let hasDrag = false;
+    for (let j = events.indexOf(clickEv) + 1; j < events.length; j++) {
+      if (events[j].drag) hasDrag = true;
+      if (events[j].release) {
+        releaseTime = events[j].t;
+        break;
+      }
+      // Safety: if we find another click before a release, assume quick click
+      if (events[j].click) break;
+    }
+    const clickDur = releaseTime - clickEv.t;
+    clickPairs.push({ ...clickEv, releaseTime, clickDur, hasDrag });
+  }
+
+  // Cluster nearby click pairs
   const clusters = [];
   let cur = [];
-  for (const ev of clicks) {
+  for (const cp of clickPairs) {
+    if (cp.hasDrag) continue; // Skip drag operations (not real clicks)
     if (cur.length > 0) {
       const last = cur[cur.length - 1];
-      const dt = ev.t - last.t;
-      const dist = Math.sqrt((ev.nx - last.nx) ** 2 + (ev.ny - last.ny) ** 2);
-      if (dt < 2.0 && dist < 0.08) { cur.push(ev); continue; }
+      const dt = cp.t - last.t;
+      const dist = Math.sqrt((cp.nx - last.nx) ** 2 + (cp.ny - last.ny) ** 2);
+      if (dt < 2.0 && dist < 0.08) { cur.push(cp); continue; }
     }
     if (cur.length) clusters.push(cur);
-    cur = [ev];
+    cur = [cp];
   }
   if (cur.length) clusters.push(cur);
 
   for (const cl of clusters) {
     const avgNx = cl.reduce((s, e) => s + e.nx, 0) / cl.length;
     const avgNy = cl.reduce((s, e) => s + e.ny, 0) / cl.length;
+    // Anticipate: start zoom BEFORE the click
+    const anticipate = 0.35;
+    // Use actual click-to-release duration to set hold time
+    const lastRelease = Math.max(...cl.map(c => c.releaseTime));
+    const firstClick = cl[0].t;
+    const interactionDur = lastRelease - firstClick;
+    // Hold = interaction duration + a buffer to let user see the result
+    const hold = Math.max(0.8, Math.min(interactionDur + 0.6, 3.5));
+
     if (cl.length === 1) {
       zooms.push({
-        id: 0, time: cl[0].t, nx: avgNx, ny: avgNy,
-        zoom: 2.0, hold: 1.5, ease_in: 0.2, ease_out: 0.35,
+        id: 0, time: Math.max(0, firstClick - anticipate), nx: avgNx, ny: avgNy,
+        zoom: 2.0, hold, ease_in: 0.35, ease_out: 0.45,
         type: 'click', enabled: true,
       });
     } else {
-      const clDur = cl[cl.length - 1].t - cl[0].t;
       zooms.push({
-        id: 0, time: cl[0].t, nx: avgNx, ny: avgNy,
-        zoom: Math.min(2.3, 3.5), hold: Math.min(clDur + 1.0, 3.0),
-        ease_in: 0.2, ease_out: 0.4, type: 'click', enabled: true,
+        id: 0, time: Math.max(0, firstClick - anticipate), nx: avgNx, ny: avgNy,
+        zoom: Math.min(2.3, 3.5), hold,
+        ease_in: 0.35, ease_out: 0.5, type: 'click', enabled: true,
       });
     }
   }
@@ -97,8 +126,8 @@ export function analyzeLocal() {
         const isDrag = events.slice(Math.max(0, i - ARR_WIN * 2), i).some(e => e.drag);
         if (!hasNearby && !isDrag) {
           zooms.push({
-            id: 0, time: ev.t - 0.1, nx: ev.nx, ny: ev.ny,
-            zoom: 1.6, hold: 1.5, ease_in: 0.3, ease_out: 0.4,
+            id: 0, time: Math.max(0, ev.t - 0.3), nx: ev.nx, ny: ev.ny,
+            zoom: 1.6, hold: 1.5, ease_in: 0.4, ease_out: 0.5,
             type: 'arrive', enabled: true,
           });
         }
@@ -122,8 +151,8 @@ export function analyzeLocal() {
         const hasNearby = zooms.some(z => Math.abs(z.time - stillStart) < 1.2);
         if (!hasNearby) {
           zooms.push({
-            id: 0, time: stillStart + 0.2, nx: stillNx, ny: stillNy,
-            zoom: 1.4, hold: Math.min(dur - 0.5, 3.0), ease_in: 0.4, ease_out: 0.4,
+            id: 0, time: Math.max(0, stillStart - 0.1), nx: stillNx, ny: stillNy,
+            zoom: 1.4, hold: Math.min(dur - 0.5, 3.0), ease_in: 0.5, ease_out: 0.5,
             type: 'still', enabled: true,
           });
         }
@@ -162,16 +191,19 @@ export function analyzeLocal() {
   showToast(`${merged.length} zooms detectes`);
 }
 
-// --- Easing curves matching auto_zoom.py ---
+// --- Easing curves (smooth cinematic style) ---
 function easeZoomIn(t) {
   t = Math.max(0, Math.min(1, t));
-  const base = t * t * (3 - 2 * t); // smoothstep
-  const overshoot = Math.sin(t * Math.PI) * 0.04; // subtle 4% bump
-  return Math.min(1.0, base + overshoot);
+  // Smooth quintic ease-in-out: very gentle start and end, no overshoot
+  if (t < 0.5) return 16 * t * t * t * t * t;
+  const u = -2 * t + 2;
+  return 1 - u * u * u * u * u / 2;
 }
 function easeZoomOut(t) {
   t = Math.max(0, Math.min(1, t));
-  return 1 - Math.pow(1 - t, 2.5); // deceleration power curve
+  // Quintic ease-out: smooth deceleration, no bounce
+  const u = 1 - t;
+  return 1 - u * u * u * u * u;
 }
 function smoothDamp(current, target, velocity, smoothTime, dt) {
   smoothTime = Math.max(0.01, smoothTime);
@@ -179,38 +211,121 @@ function smoothDamp(current, target, velocity, smoothTime, dt) {
   const x = omega * dt;
   const exp = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
   const change = current - target;
-  const temp = (velocity + omega * change) * dt;
+  // Clamp maximum change to prevent overshooting on large dt
+  const maxChange = smoothTime * 2.0;
+  const clampedChange = Math.max(-maxChange, Math.min(maxChange, change));
+  const adjustedTarget = current - clampedChange;
+  const temp = (velocity + omega * clampedChange) * dt;
   const newVel = (velocity - omega * temp) * exp;
-  const newVal = target + (change + temp) * exp;
+  const newVal = adjustedTarget + (clampedChange + temp) * exp;
   return [newVal, newVel];
+}
+
+// --- Layout state interpolation ---
+// Default layout = "demo" (screen full, webcam corner)
+const DEFAULT_LAYOUT = LAYOUT_PRESETS['demo'];
+
+export function getLayoutState(t) {
+  const events = get(layoutEvents);
+  if (!events || events.length === 0) return DEFAULT_LAYOUT;
+
+  // Find surrounding keyframes
+  // Events are sorted by time
+  if (t <= events[0].time) return { ...DEFAULT_LAYOUT, ...events[0] };
+  if (t >= events[events.length - 1].time + (events[events.length - 1].transition || 0.8)) {
+    return { ...DEFAULT_LAYOUT, ...events[events.length - 1] };
+  }
+
+  // Find which two keyframes we're between
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const trans = ev.transition || 0.8;
+    const nextEv = events[i + 1];
+
+    if (nextEv && t >= ev.time && t < nextEv.time) {
+      // Are we in the transition zone leading into nextEv?
+      const transStart = nextEv.time - trans;
+      if (t >= transStart) {
+        // Interpolate between ev and nextEv
+        const progress = (t - transStart) / trans;
+        const ease = progress * progress * (3 - 2 * progress); // smoothstep
+        return lerpLayout({ ...DEFAULT_LAYOUT, ...ev }, { ...DEFAULT_LAYOUT, ...nextEv }, ease);
+      }
+      // Holding at ev
+      return { ...DEFAULT_LAYOUT, ...ev };
+    }
+
+    // Last event
+    if (!nextEv && t >= ev.time) {
+      return { ...DEFAULT_LAYOUT, ...ev };
+    }
+  }
+  return DEFAULT_LAYOUT;
+}
+
+function lerpLayout(a, b, t) {
+  const result = {};
+  for (const key of ['screenX', 'screenY', 'screenW', 'camX', 'camY', 'camW', 'camH']) {
+    const va = a[key] ?? 0, vb = b[key] ?? 0;
+    result[key] = va + (vb - va) * t;
+  }
+  return result;
 }
 
 // Camera state for smooth panning (persistent across frames)
 let camCx = 0.5, camCy = 0.5, camZoom = 1.0;
 let velCx = 0, velCy = 0, velZoom = 0;
 let lastPreviewT = -1;
+// Cache last computed state so template reads don't run the spring sim
+let lastZoomResult = { zoom: 1.0, cx: 0.5, cy: 0.5 };
+let lastZoomCalcT = -1;
 
 // Reset camera state (call on seek / video change)
 export function resetCamera() {
   camCx = 0.5; camCy = 0.5; camZoom = 1.0;
   velCx = 0; velCy = 0; velZoom = 0;
   lastPreviewT = -1;
+  lastZoomCalcT = -1;
+}
+
+// --- Get cursor position at time t (for smooth tracking during zoom) ---
+function getCursorAt(t) {
+  const events = get(cursorEvents);
+  if (!events || events.length === 0) return null;
+  // Binary search for closest event <= t
+  let lo = 0, hi = events.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (events[mid].t <= t) lo = mid; else hi = mid - 1;
+  }
+  const ev = events[lo];
+  if (!ev || typeof ev.t !== 'number' || Math.abs(ev.t - t) > 0.5) return null;
+  const nx = typeof ev.nx === 'number' ? ev.nx : 0.5;
+  const ny = typeof ev.ny === 'number' ? ev.ny : 0.5;
+  return { nx, ny };
 }
 
 // --- Zoom state calculation (spring-based smooth camera) ---
 export function getZoomState(t) {
+  // If called with the same time (e.g. template re-render), return cached result
+  // This prevents the template's call from advancing the spring simulation
+  if (t === lastZoomCalcT) return lastZoomResult;
+  lastZoomCalcT = t;
+
   const zooms = get(zoomEvents);
 
-  // Phase 1: compute raw target zoom from events
+  // Phase 1: compute raw target zoom + position from events
   let targetZoom = 1.0, targetCx = 0.5, targetCy = 0.5;
   let active = false;
+  let inHoldPhase = false;
+  let activeZoomEvent = null;
 
   for (const z of zooms) {
     if (!z.enabled) continue;
     const start = z.time;
-    const ei = z.ease_in || 0.2;
+    const ei = z.ease_in || 0.3;
     const hold = z.hold || 1.5;
-    const eo = z.ease_out || 0.35;
+    const eo = z.ease_out || 0.5;
     const end = start + ei + hold + eo;
     if (t < start || t > end) continue;
 
@@ -220,6 +335,7 @@ export function getZoomState(t) {
       f = easeZoomIn(lt / ei);
     } else if (lt < ei + hold) {
       f = 1.0;
+      inHoldPhase = true;
     } else {
       f = 1.0 - easeZoomOut((lt - ei - hold) / eo);
     }
@@ -230,25 +346,79 @@ export function getZoomState(t) {
       targetCx = z.nx || 0.5;
       targetCy = z.ny || 0.5;
       active = true;
+      activeZoomEvent = z;
     }
   }
 
-  // Phase 2: smooth damp camera position + zoom (spring-based)
-  const dt = (lastPreviewT >= 0) ? Math.min(t - lastPreviewT, 0.1) : 1 / 30;
-  lastPreviewT = t;
-  const adt = Math.max(dt, 1 / 60);
-
-  if (active && targetZoom > 1.05) {
-    [camCx, velCx] = smoothDamp(camCx, targetCx, velCx, 0.12, adt);
-    [camCy, velCy] = smoothDamp(camCy, targetCy, velCy, 0.12, adt);
-    [camZoom, velZoom] = smoothDamp(camZoom, targetZoom, velZoom, 0.15, adt);
-  } else {
-    [camZoom, velZoom] = smoothDamp(camZoom, 1.0, velZoom, 0.22, adt);
-    [camCx, velCx] = smoothDamp(camCx, 0.5, velCx, 0.4, adt);
-    [camCy, velCy] = smoothDamp(camCy, 0.5, velCy, 0.4, adt);
+  // During hold phase: follow cursor position for natural camera tracking
+  if (inHoldPhase && activeZoomEvent) {
+    const cursor = getCursorAt(t);
+    if (cursor) {
+      const zoomCx = activeZoomEvent.nx || 0.5;
+      const zoomCy = activeZoomEvent.ny || 0.5;
+      // Adaptive tracking: the further the cursor is from zoom center, the more we follow it
+      // This keeps the cursor visible even during fast movements
+      const dist = Math.sqrt((cursor.nx - zoomCx) ** 2 + (cursor.ny - zoomCy) ** 2);
+      // viewRadius = half the visible area at current zoom (in normalized coords)
+      const viewRadius = 0.5 / (activeZoomEvent.zoom || 2.0);
+      // When cursor is near edge of visible area, track up to 90%
+      const trackWeight = Math.min(0.9, 0.2 + 0.7 * Math.min(1, dist / viewRadius));
+      targetCx = zoomCx + (cursor.nx - zoomCx) * trackWeight;
+      targetCy = zoomCy + (cursor.ny - zoomCy) * trackWeight;
+    }
   }
 
-  return { zoom: Math.max(1.0, camZoom), cx: camCx, cy: camCy };
+  // Phase 2: handle seek detection — snap camera on large time jumps
+  const rawDt = (lastPreviewT >= 0) ? (t - lastPreviewT) : 1 / 30;
+  const isSeek = Math.abs(rawDt) > 0.25 || rawDt < 0; // jumped > 250ms or went backward
+  lastPreviewT = t;
+
+  if (isSeek) {
+    // Snap camera to target instantly on seek (no spring chase)
+    camCx = active ? targetCx : 0.5;
+    camCy = active ? targetCy : 0.5;
+    camZoom = targetZoom;
+    velCx = 0; velCy = 0; velZoom = 0;
+    lastZoomResult = { zoom: Math.max(1.0, camZoom), cx: camCx, cy: camCy, speed: 0 };
+    return lastZoomResult;
+  }
+
+  const dt = Math.max(rawDt, 1 / 120); // min dt for stability
+
+  // Phase 3: smooth damp camera (cinematic spring constants)
+  if (active && targetZoom > 1.05) {
+    // Adaptive smoothTime: faster when camera is far from target (fast cursor moves)
+    // slower when close (smooth settle). Range: 0.10 (fast) to 0.30 (cinematic)
+    const panDist = Math.sqrt((camCx - targetCx) ** 2 + (camCy - targetCy) ** 2);
+    const panSmooth = Math.max(0.10, 0.30 - panDist * 2.0);
+    [camCx, velCx] = smoothDamp(camCx, targetCx, velCx, panSmooth, dt);
+    [camCy, velCy] = smoothDamp(camCy, targetCy, velCy, panSmooth, dt);
+    [camZoom, velZoom] = smoothDamp(camZoom, targetZoom, velZoom, 0.30, dt);
+  } else {
+    // Zooming out / returning to full view: gentle return
+    [camZoom, velZoom] = smoothDamp(camZoom, 1.0, velZoom, 0.40, dt);
+    [camCx, velCx] = smoothDamp(camCx, 0.5, velCx, 0.55, dt);
+    [camCy, velCy] = smoothDamp(camCy, 0.5, velCy, 0.55, dt);
+  }
+
+  // NaN safety: if camera state gets corrupted, reset to defaults
+  if (isNaN(camZoom) || isNaN(camCx) || isNaN(camCy)) {
+    camCx = 0.5; camCy = 0.5; camZoom = 1.0;
+    velCx = 0; velCy = 0; velZoom = 0;
+  }
+
+  // Expose velocity components for directional motion blur
+  const camSpeed = Math.sqrt(velCx * velCx + velCy * velCy) * 25.0 + Math.abs(velZoom) * 6.0;
+
+  lastZoomResult = {
+    zoom: Math.max(1.0, camZoom), cx: camCx, cy: camCy,
+    speed: camSpeed,
+    // Directional velocity (normalized-coord-scaled) for directional blur
+    dvx: velCx,
+    dvy: velCy,
+    dvz: velZoom,
+  };
+  return lastZoomResult;
 }
 
 // --- OBS Stop handler ---

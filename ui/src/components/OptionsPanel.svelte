@@ -1,5 +1,5 @@
 <script>
-  import { options, videoPath, apiCall, showToast, captionSegments } from '../lib/store.js';
+  import { options, videoPath, apiCall, showToast, captionSegments, layoutEvents, selectedLayoutIdx, LAYOUT_PRESETS } from '../lib/store.js';
 
   let collapsed = false;
   let transcribeStatus = '';
@@ -81,6 +81,43 @@
           <label class="text-[11px] text-txt2">Ombre portee</label>
         </div>
       {/if}
+
+      <!-- Layout -->
+      <div class="mt-1.5 pt-1.5 border-t border-border">
+        <div class="text-[10px] text-txt3 uppercase tracking-wider font-medium mb-1">Layout</div>
+        <div class="text-[10px] text-txt3 mb-1">Dbl-clic sur la rangee du bas de la timeline pour ajouter un keyframe.</div>
+        {#if $selectedLayoutIdx >= 0 && $layoutEvents[$selectedLayoutIdx]}
+          {@const le = $layoutEvents[$selectedLayoutIdx]}
+          <div class="flex items-center gap-2 py-1">
+            <label class="text-[11px] text-txt3 min-w-[40px]">Preset</label>
+            <select value={le.preset} on:change={(e) => {
+              const preset = e.target.value;
+              const vals = LAYOUT_PRESETS[preset];
+              Object.assign($layoutEvents[$selectedLayoutIdx], { preset, ...vals });
+              $layoutEvents = $layoutEvents;
+            }} class="flex-1 bg-bg border border-border text-txt2 rounded-md px-1.5 py-0.5 text-[10px] outline-none focus:border-accent/40">
+              <option value="intro">Intro (cam large)</option>
+              <option value="demo">Demo (ecran plein)</option>
+              <option value="split">Split (50/50)</option>
+              <option value="cam-only">Cam only</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2 py-1">
+            <label class="text-[11px] text-txt3 min-w-[40px]">Trans.</label>
+            <input type="range" min="0.2" max="2.0" step="0.1" value={le.transition || 0.8} on:input={(e) => {
+              $layoutEvents[$selectedLayoutIdx].transition = parseFloat(e.target.value);
+              $layoutEvents = $layoutEvents;
+            }} class="flex-1" />
+            <span class="text-[10px] text-txt3 min-w-[28px] text-right font-mono">{(le.transition || 0.8).toFixed(1)}s</span>
+          </div>
+          <button class="mt-1 px-2 py-0.5 text-[10px] text-red-400 border border-red-400/30 rounded hover:bg-red-400/10 transition-colors" on:click={() => {
+            $layoutEvents = $layoutEvents.filter((_, i) => i !== $selectedLayoutIdx);
+            $selectedLayoutIdx = -1;
+          }}>Supprimer keyframe</button>
+        {:else}
+          <div class="text-[10px] text-txt3/60 py-1">Aucun keyframe selectionne</div>
+        {/if}
+      </div>
 
       <!-- Webcam -->
       <div class="mt-1.5 pt-1.5 border-t border-border">
